@@ -108,34 +108,59 @@ INPUT_HTML = """
             postData({ type: type, value: value });
         }
 
-        // 2. 触摸板核心逻辑 (带 40ms 节流)
+        // 2. 触摸板核心逻辑：轻触=左键，长按拖动=按住拖拽
         const pad = document.getElementById('pad');
         let lastX = 0, lastY = 0;
-        let isMoving = false;
+        let totalDx = 0, totalDy = 0;
+        let touchStartTime = 0;
+        let isHolding = false;       // 长按已触发，按键已按下
+        let holdSent = false;        // 已发送 mouse_down
         let moveQueue = { dx: 0, dy: 0 };
         let timer = null;
+        const HOLD_DELAY = 300;     // 长按阈值 300ms
+        const TAP_THRESHOLD = 10;   // 轻触移动容忍像素
 
         pad.addEventListener('touchstart', (e) => {
             const touch = e.touches[0];
             lastX = touch.clientX;
             lastY = touch.clientY;
-            isMoving = true;
+            totalDx = 0;
+            totalDy = 0;
+            touchStartTime = Date.now();
+            isHolding = false;
+            holdSent = false;
             pad.style.background = '#2a2a2a';
         });
 
         pad.addEventListener('touchmove', (e) => {
-            if (!isMoving || e.touches.length !== 1) return;
+            if (e.touches.length !== 1) return;
             const touch = e.touches[0];
             let dx = touch.clientX - lastX;
             let dy = touch.clientY - lastY;
             lastX = touch.clientX;
             lastY = touch.clientY;
+            totalDx += Math.abs(dx);
+            totalDy += Math.abs(dy);
 
-            // 灵敏度系数 1.5 倍，觉得慢可调大
+            // 如果移动距离超过阈值且还没进入长按状态，取消长按检测
+            if (!isHolding && (totalDx > TAP_THRESHOLD || totalDy > TAP_THRESHOLD)) {
+                // 移动距离已经够大，如果还没到长按时间，说明是快速滑动，不触发拖拽
+                // 但如果已经超过长按时间，进入拖拽
+            }
+
+            // 已经超过长按时间，发送 mouse_down 并开始拖拽
+            if (!holdSent && Date.now() - touchStartTime >= HOLD_DELAY) {
+                isHolding = true;
+                holdSent = true;
+                postData({ type: 'mouse_down', value: 'left' }, true);
+                pad.style.background = '#333';
+            }
+
+            // 灵敏度系数 1.5 倍
             moveQueue.dx += dx * 1.5;
             moveQueue.dy += dy * 1.5;
 
-            // 节流：40ms 周期打包一次坐标差发送给电脑
+            // 节流：40ms 周期打包发送
             if (!timer) {
                 timer = setTimeout(() => {
                     let sendX = Math.round(moveQueue.dx);
@@ -149,8 +174,19 @@ INPUT_HTML = """
             }
         });
 
-        pad.addEventListener('touchend', () => {
-            isMoving = false;
+        pad.addEventListener('touchend', (e) => {
+            let elapsed = Date.now() - touchStartTime;
+
+            if (holdSent) {
+                // 拖拽结束，释放按键
+                postData({ type: 'mouse_up', value: 'left' }, true);
+            } else if (elapsed < HOLD_DELAY && totalDx < TAP_THRESHOLD && totalDy < TAP_THRESHOLD) {
+                // 轻触 = 左键单击
+                postData({ type: 'mouse_click', value: 'left' }, true);
+            }
+
+            isHolding = false;
+            holdSent = false;
             pad.style.background = '#222';
         });
 
@@ -369,6 +405,16 @@ class Handler(BaseHTTPRequestHandler):
         elif data_type == "mouse_click":
             click_val = data.get("value", "left")
             key_code = "0xC1" if click_val == "right" else "0xC0"
+            subprocess.run(["ydotool", "click", key_code], env=env)
+        elif data_type == "mouse_down":
+            click_val = data.get("value", "left")
+            # 0x40=down base, 0x00=left, 0x01=right
+            key_code = "0x41" if click_val == "right" else "0x40"
+            subprocess.run(["ydotool", "click", key_code], env=env)
+        elif data_type == "mouse_up":
+            click_val = data.get("value", "left")
+            # 0x80=up base, 0x00=left, 0x01=right
+            key_code = "0x81" if click_val == "right" else "0x80"
             subprocess.run(["ydotool", "click", key_code], env=env)
         elif data_type == "text" and data_value:
             subprocess.run(["wl-copy"], input=data_value.encode("utf-8"), env=env)
