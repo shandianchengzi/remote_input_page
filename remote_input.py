@@ -226,10 +226,11 @@ INPUT_HTML = """
             let isTap = totalDx < TAP_THRESHOLD && totalDy < TAP_THRESHOLD;
 
             if (padState === 'dragging') {
-                if (!dragStarted && isTap) {
+                // 手指离开触摸板 → 立即停止拖拽
+                if (!dragStarted) {
                     postData({ type: 'mouse_up', value: 'left' }, true);
-                    padState = 'idle';
                 }
+                padState = 'idle';
                 pad.style.background = '#222';
                 return;
             }
