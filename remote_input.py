@@ -55,23 +55,67 @@ INPUT_HTML = """
                     position: relative; touch-action: none; text-align: center; padding: 10px;
                     user-select: none; -webkit-user-select: none; }
 
+        .sensitivity-bar { display: flex; align-items: center; gap: 6px; margin-top: 10px; padding: 0 2px; }
+        .sensitivity-bar input[type=range] { flex: 1; height: 3px; -webkit-appearance: none; background: #444; border-radius: 2px; outline: none; }
+        .sensitivity-bar input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; background: #2563eb; border-radius: 50%; cursor: pointer; }
+        .sensitivity-bar span { color: #666; font-size: 11px; min-width: 28px; text-align: right; }
         #status { margin-top: 8px; color: #4ade80; font-size: 13px; min-height: 18px; text-align: center; }
         .help-text { margin-top: 10px; color: #555; font-size: 11px; line-height: 1.6; }
         .help-text b { color: #777; }
+
+        /* 统一宽度限制与居中容器 */
+        .main-container { width: 100%; margin: 0; }
+
+        /* 键盘模式 */
+        .kb-hide { display: none !important; }
+        .kb-label { color: #2563eb; font-size: 14px; display: flex; align-items: center; gap: 4px; cursor: pointer; margin-left: 12px; }
+        .kb-label input { accent-color: #2563eb; }
+        .keyboard { display: none; margin-top: 5px; width: 100%; }
+        .keyboard.active { display: block; }
+        .kb-row { display: flex; gap: 2px; margin-bottom: 2px; justify-content: space-between; width: 100%; }
+        .kb-key {
+            min-width: 20px; height: 32px; font-size: 10px;
+            background: #333; color: white; border: none; border-radius: 3px;
+            cursor: pointer; display: flex; justify-content: center; align-items: center;
+            padding: 0 3px; -webkit-tap-highlight-color: transparent;
+            flex: 1 1 auto; user-select: none; -webkit-user-select: none;
+        }
+        .kb-key:active { background: #555; }
+        .kb-key.wide { flex: 1.5 1 auto; font-size: 9px; }
+        .kb-row:first-child .kb-key { font-size: 7px; min-width: 18px; height: 24px; }
+        .kb-key.space { flex: 5 1 auto; }
+        .kb-key.shift-active { background: #2563eb; }
+        .kb-key.long-press { background: #2563eb; }
+        .kb-key.alt-active { background: #2563eb !important; color: white; }
+        .touchpad-only {
+            margin-top: 10px; display: none !important; flex-direction: row;
+            align-items: stretch; gap: 8px; width: 100%; height: 160px;
+        }
+        .touchpad-only.active { display: flex !important; }
+        .numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; flex: 0 0 28%; }
+        .numpad .kb-key { flex: none; width: 100%; height: 100%; font-size: 12px; }
+        .touchpad-only .touchpad { flex: 1; width: auto; height: 100%; }
+        .touchpad-col { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+        .touchpad-col .touchpad { flex: 1; height: auto; }
+        .kb-sens { margin-top: 0; padding: 0 2px; }
     </style>
 </head>
 <body>
     <div class="header-row">
         <h2>Remote Input</h2>
-        <label class="term-label"><input type="checkbox" id="termMode"> 终端模式</label>
+        <div style="display:flex;align-items:center;">
+            <label class="term-label"><input type="checkbox" id="termMode"> 终端模式</label>
+            <label class="kb-label"><input type="checkbox" id="kbMode"> 键盘模式</label>
+        </div>
     </div>
+    <div id="inputArea">
     <textarea id="text" placeholder="在这里输入文字..."></textarea>
 
     <div class="btn-group">
+        <button class="sub-btn" onclick="sendAction('key', '1')">Esc</button>
+        <button class="sub-btn" onclick="sendAction('key', '15')">Tab</button>
+        <button class="sub-btn" onclick="sendAction('key', '14')">退格</button>
         <button class="sub-btn" onclick="sendAction('mouse_click', 'right')">右键</button>
-        <button class="sub-btn" onclick="sendAction('key', '14')">Back</button>
-        <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+a')">全选</button>
-        <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+z')">撤销</button>
     </div>
     <div class="btn-group">
         <button class="sub-btn" onclick="sendAction('key', '103')">↑</button>
@@ -80,8 +124,8 @@ INPUT_HTML = """
         <button class="sub-btn" onclick="sendAction('key', '106')">→</button>
     </div>
     <div class="btn-group">
-        <button class="sub-btn" onclick="sendAction('key', '1')">Esc</button>
-        <button class="sub-btn" onclick="sendAction('key', '15')">Tab</button>
+        <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+z')">撤销</button>
+        <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+a')">全选</button>
         <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+c')">复制</button>
         <button class="sub-btn" onclick="sendAction('shortcut', 'shift+insert')">粘贴</button>
     </div>
@@ -89,7 +133,6 @@ INPUT_HTML = """
     <button class="main-btn" onclick="sendText()">发送文本到电脑</button>
 
     <div class="mouse-container">
-        <button class="click-btn" id="leftClickBtn">左键</button>
         <div class="scroll-col">
             <button class="scroll-btn" onclick="sendAction('key', '104')">PgUp</button>
             <button class="scroll-btn" onclick="sendAction('key', '109')">PgDn</button>
@@ -98,17 +141,386 @@ INPUT_HTML = """
         <button class="click-btn right-btn" id="enterBtn">Enter</button>
     </div>
 
+    <div class="sensitivity-bar">
+        <span>灵敏</span>
+        <input type="range" id="sensitivity" min="0.3" max="5" step="0.1" value="2">
+        <span id="sensVal">2.0</span>
+    </div>
+    </div>
+
+    <div class="main-container">
+    <div class="keyboard" id="keyboard">
+        <div class="kb-row">
+            <button class="kb-key wide" data-code="1">Esc</button>
+            <button class="kb-key" data-code="59">F1</button>
+            <button class="kb-key" data-code="60">F2</button>
+            <button class="kb-key" data-code="61">F3</button>
+            <button class="kb-key" data-code="62">F4</button>
+            <button class="kb-key" data-code="63">F5</button>
+            <button class="kb-key" data-code="64">F6</button>
+            <button class="kb-key" data-code="65">F7</button>
+            <button class="kb-key" data-code="66">F8</button>
+            <button class="kb-key" data-code="67">F9</button>
+            <button class="kb-key" data-code="68">F10</button>
+            <button class="kb-key" data-code="87">F11</button>
+            <button class="kb-key" data-code="88">F12</button>
+            <button class="kb-key" data-code="102">Home</button>
+            <button class="kb-key" data-code="107">End</button>
+            <button class="kb-key" data-code="110">Ins</button>
+            <button class="kb-key" data-code="111">Del</button>
+        </div>
+        <div class="kb-row">
+            <button class="kb-key" data-code="41" data-label="`" data-shift="~">`</button>
+            <button class="kb-key" data-code="2" data-label="1" data-shift="!">1</button>
+            <button class="kb-key" data-code="3" data-label="2" data-shift="@">2</button>
+            <button class="kb-key" data-code="4" data-label="3" data-shift="#">3</button>
+            <button class="kb-key" data-code="5" data-label="4" data-shift="$">4</button>
+            <button class="kb-key" data-code="6" data-label="5" data-shift="%">5</button>
+            <button class="kb-key" data-code="7" data-label="6" data-shift="^">6</button>
+            <button class="kb-key" data-code="8" data-label="7" data-shift="&amp;">7</button>
+            <button class="kb-key" data-code="9" data-label="8" data-shift="*">8</button>
+            <button class="kb-key" data-code="10" data-label="9" data-shift="(">9</button>
+            <button class="kb-key" data-code="11" data-label="0" data-shift=")">0</button>
+            <button class="kb-key" data-code="12" data-label="-" data-shift="_">-</button>
+            <button class="kb-key" data-code="13" data-label="=" data-shift="+">=</button>
+            <button class="kb-key wide" data-code="14">退格</button>
+        </div>
+        <div class="kb-row">
+            <button class="kb-key wide" data-code="15">Tab</button>
+            <button class="kb-key" data-code="16">Q</button>
+            <button class="kb-key" data-code="17">W</button>
+            <button class="kb-key" data-code="18">E</button>
+            <button class="kb-key" data-code="19">R</button>
+            <button class="kb-key" data-code="20">T</button>
+            <button class="kb-key" data-code="21">Y</button>
+            <button class="kb-key" data-code="22">U</button>
+            <button class="kb-key" data-code="23">I</button>
+            <button class="kb-key" data-code="24">O</button>
+            <button class="kb-key" data-code="25">P</button>
+            <button class="kb-key" data-code="26" data-label="[" data-shift="{">[</button>
+            <button class="kb-key" data-code="27" data-label="]" data-shift="}">]</button>
+            <button class="kb-key" data-code="43" data-label="\\" data-shift="|">\</button>
+        </div>
+        <div class="kb-row">
+            <button class="kb-key wide" data-code="58">Caps</button>
+            <button class="kb-key" data-code="30">A</button>
+            <button class="kb-key" data-code="31">S</button>
+            <button class="kb-key" data-code="32">D</button>
+            <button class="kb-key" data-code="33">F</button>
+            <button class="kb-key" data-code="34">G</button>
+            <button class="kb-key" data-code="35">H</button>
+            <button class="kb-key" data-code="36">J</button>
+            <button class="kb-key" data-code="37">K</button>
+            <button class="kb-key" data-code="38">L</button>
+            <button class="kb-key" data-code="39" data-label=";" data-shift=":">;</button>
+            <button class="kb-key" data-code="40" data-label="'" data-shift="&quot;">'</button>
+            <button class="kb-key wide" data-code="28">Enter</button>
+        </div>
+        <div class="kb-row">
+            <button class="kb-key wide" id="shiftKey" data-code="42">Shift</button>
+            <button class="kb-key" data-code="44">Z</button>
+            <button class="kb-key" data-code="45">X</button>
+            <button class="kb-key" data-code="46">C</button>
+            <button class="kb-key" data-code="47">V</button>
+            <button class="kb-key" data-code="48">B</button>
+            <button class="kb-key" data-code="49">N</button>
+            <button class="kb-key" data-code="50">M</button>
+            <button class="kb-key" data-code="51" data-label="," data-shift="&lt;">,</button>
+            <button class="kb-key" data-code="52" data-label="." data-shift="&gt;">.</button>
+            <button class="kb-key" data-code="53" data-label="/" data-shift="?">/</button>
+            <button class="kb-key" data-code="104">PgUp</button>
+            <button class="kb-key" data-code="109">PgDn</button>
+        </div>
+        <div class="kb-row">
+            <button class="kb-key wide" data-code="29">Ctrl</button>
+            <button class="kb-key wide" data-code="464">Fn</button>
+            <button class="kb-key wide" data-code="125">Win</button>
+            <button class="kb-key wide" data-code="56">Alt</button>
+            <button class="kb-key space" data-code="57">Space</button>
+            <button class="kb-key" data-code="210">PrtSc</button>
+            <button class="kb-key" data-code="105">←</button>
+            <button class="kb-key" data-code="103">↑</button>
+            <button class="kb-key" data-code="108">↓</button>
+            <button class="kb-key" data-code="106">→</button>
+        </div>
+    </div>
+
+    <div class="touchpad-only" id="touchpadOnly">
+        <div class="numpad">
+            <button class="kb-key" data-code="75">7</button>
+            <button class="kb-key" data-code="76">8</button>
+            <button class="kb-key" data-code="77">9</button>
+            <button class="kb-key" data-code="71">4</button>
+            <button class="kb-key" data-code="72">5</button>
+            <button class="kb-key" data-code="73">6</button>
+            <button class="kb-key" data-code="69">1</button>
+            <button class="kb-key" data-code="70">2</button>
+            <button class="kb-key" data-code="74">3</button>
+            <button class="kb-key" data-code="82">0</button>
+            <button class="kb-key" data-code="83">.</button>
+            <button class="kb-key" data-code="96">Enter</button>
+        </div>
+        <div class="touchpad-col">
+            <div class="touchpad" id="pad2"></div>
+            <div class="sensitivity-bar kb-sens">
+                <span>灵敏</span>
+                <input type="range" id="sensitivityKb" min="0.3" max="5" step="0.1" value="2">
+                <span id="sensValKb">2.0</span>
+            </div>
+        </div>
+    </div>
+    </div>
+
     <div id="status"></div>
 
     <div class="help-text">
         <b>触摸板</b>：滑动=移动光标，轻触=左键，双击=拖拽模式（再双击退出）<br>
         <b>左键/右键</b>：点击对应按钮 | <b>PgUp/PgDn</b>：翻页<br>
         <b>终端模式</b>：复制/粘贴→Ctrl+Shift+C/V，PgUp/PgDn→Ctrl+Shift+PageUp/Down<br>
-        <b>快捷键</b>：Back=退格，Esc=退出，Tab=制表，↑↓←→=方向键
+        <b>快捷键</b>：退格=退格键，Esc=退出，Tab=制表，↑↓←→=方向键
     </div>
 
     <script>
         let sending = false;
+
+        // 键盘模式切换
+        const kbModeCb = document.getElementById('kbMode');
+        const inputArea = document.getElementById('inputArea');
+        const kbContainer = document.getElementById('keyboard');
+        const touchpadOnly = document.getElementById('touchpadOnly');
+
+        kbModeCb.addEventListener('change', () => {
+            const active = kbModeCb.checked;
+            inputArea.classList.toggle('kb-hide', active);
+            kbContainer.classList.toggle('active', active);
+            touchpadOnly.classList.toggle('active', active);
+            document.activeElement?.blur();
+        });
+
+        // Shift 状态管理
+        let shiftActive = false;
+        const shiftKeyEl = document.getElementById('shiftKey');
+
+        function updateShiftDisplay() {
+            document.querySelectorAll('.kb-key[data-shift]').forEach(k => {
+                k.textContent = shiftActive ? k.dataset.shift : k.dataset.label;
+            });
+        }
+
+        shiftKeyEl.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            shiftActive = !shiftActive;
+            shiftKeyEl.classList.toggle('shift-active', shiftActive);
+            updateShiftDisplay();
+        });
+
+        // CapsLock 状态管理
+        let capsLockActive = false;
+        const capsLockKey = document.querySelector('[data-code="58"]');
+        capsLockKey.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            capsLockActive = !capsLockActive;
+            capsLockKey.classList.toggle('shift-active', capsLockActive);
+        });
+
+        // Ctrl 组合键状态管理
+        let ctrlActive = false;
+        const ctrlKeyEl = document.querySelector('[data-code="29"]');
+        ctrlKeyEl.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            ctrlActive = !ctrlActive;
+            ctrlKeyEl.classList.toggle('alt-active', ctrlActive);
+        });
+
+        // 字母键 keycode 集合
+        const letterCodes = new Set([
+            16,17,18,19,20,21,22,23,24,25,
+            30,31,32,33,34,35,36,37,38,
+            44,45,46,47,48,49,50
+        ]);
+
+        // 长按 + 上滑手势检测
+        let longPressTimer = null;
+        let longPressKey = null;
+        const LONG_PRESS_MS = 500;
+        let swipeStartX = 0, swipeStartY = 0;
+        let swipeActiveKey = null;
+        let swipeTriggered = false;
+        const SLIDE_UP_THRESHOLD = 30;
+
+        // 键盘按键处理（事件委托，同时绑定全键盘和小键盘）
+        function handleKeyTouchStart(e) {
+            const key = e.target.closest('.kb-key');
+            if (!key) return;
+            e.preventDefault();
+
+            const code = parseInt(key.getAttribute('data-code'));
+            if (!code) return;
+            if (key.id === 'shiftKey' || key.dataset.code === '58' || key.dataset.code === '29') return;
+
+            // 记录触摸起始位置
+            const touch = e.touches[0];
+            swipeStartX = touch.clientX;
+            swipeStartY = touch.clientY;
+            swipeActiveKey = key;
+            swipeTriggered = false;
+
+            // 视觉反馈
+            key.style.background = '#555';
+
+            // 长按检测：有 shift 变体的键
+            if (key.dataset.shift) {
+                longPressTimer = setTimeout(() => {
+                    longPressKey = key;
+                    key.classList.add('long-press');
+                    key.textContent = key.dataset.shift;
+                }, LONG_PRESS_MS);
+            }
+        }
+
+        function handleKeyTouchMove(e) {
+            if (!swipeActiveKey || !swipeActiveKey.dataset.shift) return;
+            const touch = e.touches[0];
+            const diffY = swipeStartY - touch.clientY; // 向上为正
+
+            if (diffY > SLIDE_UP_THRESHOLD && !swipeTriggered) {
+                // 上滑超过阈值，切换到替代字符
+                swipeTriggered = true;
+                // 取消长按计时器（上滑优先于长按）
+                if (longPressTimer) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
+                // 视觉反馈：显示替代字符并高亮
+                swipeActiveKey.classList.add('alt-active');
+                swipeActiveKey.textContent = swipeActiveKey.dataset.shift;
+            } else if (diffY <= 0 && swipeTriggered) {
+                // 滑回原位，取消替代
+                swipeTriggered = false;
+                swipeActiveKey.classList.remove('alt-active');
+                if (!longPressKey) {
+                    swipeActiveKey.textContent = swipeActiveKey.dataset.label;
+                }
+            }
+        }
+
+        function handleKeyTouchEnd(e) {
+            const key = swipeActiveKey || e.target.closest('.kb-key');
+            if (!key) return;
+
+            const code = parseInt(key.getAttribute('data-code'));
+            if (!code) return;
+            if (key.id === 'shiftKey' || key.dataset.code === '58' || key.dataset.code === '29') return;
+
+            key.style.background = '';
+
+            if (swipeTriggered) {
+                // 上滑触发：发送 shifted 键
+                key.classList.remove('alt-active');
+                key.textContent = key.dataset.label;
+                postData({ type: 'key_combo', value: '42,' + code });
+            } else if (longPressTimer) {
+                // 普通短按（无上滑、无长按）
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+
+                if (ctrlActive && shiftActive) {
+                    // Ctrl+Shift+key 组合
+                    postData({ type: 'key_combo', value: '29,42,' + code });
+                    ctrlActive = false;
+                    ctrlKeyEl.classList.remove('alt-active');
+                    shiftActive = false;
+                    shiftKeyEl.classList.remove('shift-active');
+                    updateShiftDisplay();
+                } else if (ctrlActive) {
+                    // Ctrl+key 组合
+                    postData({ type: 'key_combo', value: '29,' + code });
+                    ctrlActive = false;
+                    ctrlKeyEl.classList.remove('alt-active');
+                } else if (shiftActive || (capsLockActive && letterCodes.has(code))) {
+                    postData({ type: 'key_combo', value: '42,' + code });
+                    if (shiftActive) {
+                        shiftActive = false;
+                        shiftKeyEl.classList.remove('shift-active');
+                        updateShiftDisplay();
+                    }
+                } else {
+                    postData({ type: 'key', value: code });
+                }
+            } else if (longPressKey === key) {
+                // 长按触发：发送 shifted 键
+                key.classList.remove('long-press');
+                key.textContent = key.dataset.label;
+                postData({ type: 'key_combo', value: '42,' + code });
+                longPressKey = null;
+            } else {
+                // 普通按键（字母、空格等无上滑字符的键）
+                if (ctrlActive && shiftActive) {
+                    postData({ type: 'key_combo', value: '29,42,' + code });
+                    ctrlActive = false;
+                    ctrlKeyEl.classList.remove('alt-active');
+                    shiftActive = false;
+                    shiftKeyEl.classList.remove('shift-active');
+                    updateShiftDisplay();
+                } else if (ctrlActive) {
+                    postData({ type: 'key_combo', value: '29,' + code });
+                    ctrlActive = false;
+                    ctrlKeyEl.classList.remove('alt-active');
+                } else if (shiftActive) {
+                    postData({ type: 'key_combo', value: '42,' + code });
+                    shiftActive = false;
+                    shiftKeyEl.classList.remove('shift-active');
+                    updateShiftDisplay();
+                } else {
+                    postData({ type: 'key', value: code });
+                }
+            }
+
+            // 清理状态
+            swipeActiveKey = null;
+            swipeTriggered = false;
+        }
+
+        function handleKeyTouchCancel() {
+            if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+            if (longPressKey) {
+                longPressKey.classList.remove('long-press');
+                longPressKey.textContent = longPressKey.dataset.label;
+                longPressKey = null;
+            }
+            if (swipeActiveKey) {
+                swipeActiveKey.classList.remove('alt-active');
+                if (swipeActiveKey.dataset.shift) {
+                    swipeActiveKey.textContent = swipeActiveKey.dataset.label;
+                }
+                swipeActiveKey = null;
+            }
+            swipeTriggered = false;
+        }
+
+        kbContainer.addEventListener('touchstart', handleKeyTouchStart, { passive: false });
+        kbContainer.addEventListener('touchmove', handleKeyTouchMove, { passive: false });
+        kbContainer.addEventListener('touchend', handleKeyTouchEnd, { passive: false });
+        kbContainer.addEventListener('touchcancel', handleKeyTouchCancel);
+        // numpad 按键直接绑定事件（不通过 touchpadOnly 委托，避免干扰触摸板）
+        document.querySelectorAll('#touchpadOnly .numpad .kb-key').forEach(key => {
+            key.addEventListener('touchstart', (e) => {
+                e.stopPropagation();
+                handleKeyTouchStart(e);
+            }, { passive: false });
+            key.addEventListener('touchend', (e) => {
+                e.stopPropagation();
+                handleKeyTouchEnd(e);
+            }, { passive: false });
+            key.addEventListener('touchcancel', (e) => {
+                e.stopPropagation();
+                handleKeyTouchCancel(e);
+            });
+        });
+
+        // 防止键盘长按弹出菜单
+        kbContainer.addEventListener('contextmenu', (e) => e.preventDefault());
+        touchpadOnly.addEventListener('contextmenu', (e) => e.preventDefault());
 
         // 1. 基础文本与按键发送（带静默模式，鼠标高频请求不触发状态提示）
         async function postData(payload, quiet=false) {
@@ -141,104 +553,175 @@ INPUT_HTML = """
         }
 
         // 2. 触摸板：单指=移动/轻触单击/双击拖拽
-        const pad = document.getElementById('pad');
-        let lastX = 0, lastY = 0;
-        let totalDx = 0, totalDy = 0;
-        let moveQueue = { dx: 0, dy: 0 };
-        let moveTimer = null;
+        const sensSlider = document.getElementById('sensitivity');
+        const sensVal = document.getElementById('sensVal');
+        const sensSliderKb = document.getElementById('sensitivityKb');
+        const sensValKb = document.getElementById('sensValKb');
         const TAP_THRESHOLD = 10;
-        const DOUBLE_TAP_MS = 300;
+        const DOUBLE_TAP_MS = 200;
 
-        // 单指状态：idle | pending_tap | dragging
-        let padState = 'idle';
-        let tapTimeout = null;
-        let dragStarted = false;
-
-        function padSendMove() {
-            let sendX = Math.round(moveQueue.dx);
-            let sendY = Math.round(moveQueue.dy);
-            if (sendX !== 0 || sendY !== 0) {
-                postData({ type: 'mouse_move', x: sendX, y: sendY }, true);
-            }
-            moveQueue = { dx: 0, dy: 0 };
-            moveTimer = null;
+        // 从 localStorage 加载保存的灵敏度值
+        const savedSensitivity = localStorage.getItem('remote_input_sensitivity');
+        if (savedSensitivity) {
+            sensSlider.value = savedSensitivity;
+            sensVal.textContent = parseFloat(savedSensitivity).toFixed(1);
+            sensSliderKb.value = savedSensitivity;
+            sensValKb.textContent = parseFloat(savedSensitivity).toFixed(1);
         }
 
-        pad.addEventListener('touchstart', (e) => {
-            const touch = e.touches[0];
-            lastX = touch.clientX;
-            lastY = touch.clientY;
-            totalDx = 0;
-            totalDy = 0;
-            dragStarted = false;
-            pad.style.background = '#2a2a2a';
-
-            if (padState === 'pending_tap') {
-                clearTimeout(tapTimeout);
-                padState = 'dragging';
-                dragStarted = true;
-                postData({ type: 'mouse_down', value: 'left' }, true);
-                pad.style.background = '#333';
-                dragStarted = false;
+        // 两个灵敏度滑块同步
+        function syncSensitivity(source) {
+            const value = parseFloat(source.value).toFixed(1);
+            localStorage.setItem('remote_input_sensitivity', source.value);
+            if (source === sensSlider) {
+                sensVal.textContent = value;
+                sensSliderKb.value = source.value;
+                sensValKb.textContent = value;
+            } else {
+                sensValKb.textContent = value;
+                sensSlider.value = source.value;
+                sensVal.textContent = value;
             }
-        });
+        }
+        sensSlider.addEventListener('input', () => syncSensitivity(sensSlider));
+        sensSliderKb.addEventListener('input', () => syncSensitivity(sensSliderKb));
 
-        pad.addEventListener('touchmove', (e) => {
-            if (e.touches.length !== 1) return;
-            const touch = e.touches[0];
-            let dx = touch.clientX - lastX;
-            let dy = touch.clientY - lastY;
-            lastX = touch.clientX;
-            lastY = touch.clientY;
-            totalDx += Math.abs(dx);
-            totalDy += Math.abs(dy);
+        function setupTouchpad(el) {
+            let lastX = 0, lastY = 0;
+            let totalDx = 0, totalDy = 0;
+            let moveQueue = { dx: 0, dy: 0 };
+            let moveTimer = null;
+            let padState = 'idle';
+            let tapTimeout = null;
+            let lastTapTime = 0;     // 上次 tap 结束的时间戳，用于兜底检测双击
+            let isDragging = false;  // 防止 timeout 在拖拽中误发 click
+            let inputType = null; // 'touch' or 'mouse' — 防止混合设备上两端打架
 
-            moveQueue.dx += dx * 1.5;
-            moveQueue.dy += dy * 1.5;
-            if (!moveTimer) {
-                moveTimer = setTimeout(padSendMove, 40);
-            }
-        });
-
-        pad.addEventListener('touchend', () => {
-            let isTap = totalDx < TAP_THRESHOLD && totalDy < TAP_THRESHOLD;
-
-            if (padState === 'dragging') {
-                if (!dragStarted) {
-                    postData({ type: 'mouse_up', value: 'left' }, true);
+            function padSendMove() {
+                let sendX = Math.round(moveQueue.dx);
+                let sendY = Math.round(moveQueue.dy);
+                if (sendX !== 0 || sendY !== 0) {
+                    postData({ type: 'mouse_move', x: sendX, y: sendY }, true);
                 }
-                padState = 'idle';
-                pad.style.background = '#222';
-                return;
+                moveQueue = { dx: 0, dy: 0 };
+                moveTimer = null;
             }
 
-            if (isTap && padState === 'idle') {
-                padState = 'pending_tap';
-                tapTimeout = setTimeout(() => {
-                    if (padState === 'pending_tap') {
-                        postData({ type: 'mouse_click', value: 'left' }, true);
-                        padState = 'idle';
-                    }
-                }, DOUBLE_TAP_MS);
-            } else if (padState === 'pending_tap') {
-                clearTimeout(tapTimeout);
-                padState = 'idle';
+            // 共享的核心逻辑：开始、移动、结束
+            function handleStart(cx, cy) {
+                lastX = cx;
+                lastY = cy;
+                totalDx = 0;
+                totalDy = 0;
+                el.style.background = '#2a2a2a';
+
+                if (padState === 'pending_tap') {
+                    // 正常路径：timeout 还没 fires，padState 仍是 pending_tap
+                    clearTimeout(tapTimeout);
+                    padState = 'dragging';
+                    isDragging = true;
+                    postData({ type: 'mouse_down', value: 'left' }, true);
+                    el.style.background = '#333';
+                } else if (padState === 'idle' && lastTapTime &&
+                           Date.now() - lastTapTime < DOUBLE_TAP_MS) {
+                    // 兜底路径：timeout 已 fires 把 padState 重置为 idle，
+                    // 但用户确实在双击时间窗口内，仍然启动拖拽
+                    padState = 'dragging';
+                    isDragging = true;
+                    postData({ type: 'mouse_down', value: 'left' }, true);
+                    el.style.background = '#333';
+                }
             }
 
-            pad.style.background = '#222';
-        });
+            function handleMove(cx, cy) {
+                let dx = cx - lastX;
+                let dy = cy - lastY;
+                lastX = cx;
+                lastY = cy;
+                totalDx += Math.abs(dx);
+                totalDy += Math.abs(dy);
 
-        // 防止触摸板长按弹出菜单
-        pad.addEventListener('contextmenu', (e) => e.preventDefault());
+                moveQueue.dx += dx * parseFloat(sensSlider.value);
+                moveQueue.dy += dy * parseFloat(sensSlider.value);
+                if (!moveTimer) {
+                    moveTimer = setTimeout(padSendMove, 40);
+                }
+            }
 
-        // 3. 左键单击
-        const leftBtn = document.getElementById('leftClickBtn');
-        leftBtn.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            postData({ type: 'mouse_click', value: 'left' }, true);
-        });
+            function handleEnd() {
+                let isTap = totalDx < TAP_THRESHOLD && totalDy < TAP_THRESHOLD;
 
-        // 4. Enter 键（鼠标区域右侧）
+                if (padState === 'dragging') {
+                    postData({ type: 'mouse_up', value: 'left' }, true);
+                    padState = 'idle';
+                    isDragging = false;
+                    el.style.background = '#222';
+                    return;
+                }
+
+                if (isTap && padState === 'idle') {
+                    padState = 'pending_tap';
+                    lastTapTime = Date.now();
+                    tapTimeout = setTimeout(() => {
+                        // isDragging 检查：拖拽已启动时 timeout 不应发 click
+                        if (padState === 'pending_tap' && !isDragging) {
+                            postData({ type: 'mouse_click', value: 'left' }, true);
+                            padState = 'idle';
+                        }
+                    }, DOUBLE_TAP_MS);
+                } else if (padState === 'pending_tap') {
+                    clearTimeout(tapTimeout);
+                    padState = 'idle';
+                }
+
+                el.style.background = '#222';
+            }
+
+            // === 触摸事件（移动端） ===
+            el.addEventListener('touchstart', (e) => {
+                inputType = 'touch';
+                handleStart(e.touches[0].clientX, e.touches[0].clientY);
+            });
+
+            el.addEventListener('touchmove', (e) => {
+                if (inputType !== 'touch' || e.touches.length !== 1) return;
+                handleMove(e.touches[0].clientX, e.touches[0].clientY);
+            });
+
+            el.addEventListener('touchend', () => {
+                if (inputType !== 'touch') return;
+                handleEnd();
+                inputType = null;
+            });
+
+            // === 鼠标事件（桌面端） ===
+            el.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                // 混合设备保护：如果刚触发过 touch，忽略本次 mouse 事件
+                if (inputType === 'touch') return;
+                inputType = 'mouse';
+                handleStart(e.clientX, e.clientY);
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (inputType !== 'mouse') return;
+                handleMove(e.clientX, e.clientY);
+            });
+
+            window.addEventListener('mouseup', () => {
+                if (inputType !== 'mouse') return;
+                handleEnd();
+                inputType = null;
+            });
+
+            el.addEventListener('contextmenu', (e) => e.preventDefault());
+        }
+
+        // 初始化两个触摸板
+        setupTouchpad(document.getElementById('pad'));
+        setupTouchpad(document.getElementById('pad2'));
+
+        // 3. Enter 键（鼠标区域右侧）
         const enterBtn = document.getElementById('enterBtn');
         enterBtn.addEventListener('touchstart', (e) => {
             e.preventDefault();
@@ -472,6 +955,11 @@ class Handler(BaseHTTPRequestHandler):
                 subprocess.run(["ydotool", "key", "-d", "20", "29:1", "42:1", "109:1", "109:0", "42:0", "29:0"], env=env)
             else:
                 subprocess.run(["ydotool", "key", f"{data_value}:1", f"{data_value}:0"], env=env)
+        elif data_type == "key_combo" and data_value:
+            # 格式: "42,3" 表示按住 42(Shift)，按 3(2)，然后释放
+            codes = [int(c.strip()) for c in data_value.split(',')]
+            yd_args = [f"{c}:1" for c in codes] + [f"{c}:0" for c in reversed(codes)]
+            subprocess.run(["ydotool", "key", "-d", "20"] + yd_args, env=env)
         elif data_type == "shortcut" and data_value:
             if data_value == "ctrl+a":
                 subprocess.run(["ydotool", "key", "-d", "20", "29:1", "30:1", "30:0", "29:0"], env=env)

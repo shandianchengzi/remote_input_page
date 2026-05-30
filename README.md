@@ -8,7 +8,9 @@ Ubuntu Wayland 环境下的手机远程输入工具。
 
 ```
 remote_input_page/
-├── remote_input.py    # 主程序（Python 标准库，零第三方依赖）
+├── remote_input.py           # 主程序（Python 标准库，零第三方依赖）
+├── remote_input_launcher.sh  # 启动脚本（支持前台/无头模式）
+├── .env.example              # 配置模板（复制为 .env 并填入 token）
 └── README.md
 ```
 
@@ -68,6 +70,60 @@ python3 remote_input.py --auth --token your_password
 | `--token XXX` | 指定自定义 token（需配合 `--auth`） |
 | `--port PORT` | 指定监听端口（默认 8080） |
 
+### 开机自启
+
+创建 `.env` 文件存放 token（**不要提交到 git**）：
+
+```bash
+cp .env.example .env
+# 编辑 .env，填入你的 token
+```
+
+使用 launcher 脚本启动：
+
+```bash
+# 前台启动（有终端时自动打开新窗口）
+bash remote_input_launcher.sh
+
+# 无头模式（适合 systemd 自启，无终端直接后台运行）
+REMOTE_INPUT_HEADLESS=1 bash remote_input_launcher.sh
+```
+
+#### systemd 用户服务（推荐）
+
+创建 systemd 服务实现开机自启：
+
+```bash
+mkdir -p ~/.config/systemd/user
+
+cat > ~/.config/systemd/user/remote-input.service << 'EOF'
+[Unit]
+Description=Remote Input Service
+After=network.target ydotool.service
+
+[Service]
+Type=simple
+WorkingDirectory=$HOME/snap/remote_input_page
+Environment=REMOTE_INPUT_HEADLESS=1
+ExecStart=/bin/bash $HOME/snap/remote_input_page/remote_input_launcher.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+
+systemctl --user daemon-reload
+systemctl --user enable --now remote-input
+```
+
+查看状态：
+
+```bash
+systemctl --user status remote-input
+journalctl --user -u remote-input -f
+```
+
 查看电脑局域网 IP：
 
 ```bash
@@ -82,6 +138,7 @@ ip -4 addr show | grep 'inet ' | grep -v '127.0.0.1'
 4. 输入文字，点击"发送到电脑"
 
 文字会出现在电脑当前光标位置（终端、浏览器、编辑器均适用）。
+![输入模式](输入模式.png)
 
 ## 功能详解
 
@@ -95,18 +152,42 @@ ip -4 addr show | grep 'inet ' | grep -v '127.0.0.1'
 
 | 行 | 按钮 | 功能 | ydotool 实现 |
 |----|------|------|-------------|
+| 第 1 行 | Esc | 退出键 | `key 1:1 1:0` |
+| 第 1 行 | Tab | 制表键 | `key 15:1 15:0` |
+| 第 1 行 | 退格 | 退格键 | `key 14:1 14:0` |
 | 第 1 行 | 右键 | 鼠标右键单击 | `click 0xC1` |
-| 第 1 行 | Back | 退格键 | `key 14:1 14:0` |
-| 第 1 行 | 全选 | Ctrl+A | `key 29:1 30:1 30:0 29:0` |
-| 第 1 行 | 撤销 | Ctrl+Z | `key 29:1 44:1 44:0 29:0` |
 | 第 2 行 | ↑ | 方向上 | `key 103:1 103:0` |
 | 第 2 行 | ↓ | 方向下 | `key 108:1 108:0` |
 | 第 2 行 | ← | 方向左 | `key 105:1 105:0` |
 | 第 2 行 | → | 方向右 | `key 106:1 106:0` |
-| 第 3 行 | Esc | 退出键 | `key 1:1 1:0` |
-| 第 3 行 | Tab | 制表键 | `key 15:1 15:0` |
+| 第 3 行 | 撤销 | Ctrl+Z | `key 29:1 44:1 44:0 29:0` |
+| 第 3 行 | 全选 | Ctrl+A | `key 29:1 30:1 30:0 29:0` |
 | 第 3 行 | 复制 | Ctrl+C | `key 29:1 46:1 46:0 29:0` |
 | 第 3 行 | 粘贴 | Shift+Insert | `key 42:1 110:1 110:0 42:0` |
+
+### 虚拟键盘
+
+页面右上角提供「键盘模式」开关。开启后隐藏文本输入区，显示完整虚拟键盘（含小键盘+触摸板）。
+![键盘模式](键盘模式.png)
+
+**布局：**
+- 功能键行：Esc、F1-F12、Home/End/Ins/Del
+- 数字行：带 Shift 符号（如 `1`/`!`、`2`/`@`），退格键
+- 字母行：QWERTY 布局，Tab、括号、反斜杠
+- 底部行：Shift（切换大写）、方向键、PgUp/PgDn、CapsLock、Ctrl/Alt/Win/Fn、空格
+- 小键盘+触摸板区：数字键盘（7-9/4-6/1-3/0/./Enter）+ 触摸板，左右并排
+
+**按键操作：**
+
+| 手势 | 功能 | 说明 |
+|------|------|------|
+| 短按 | 普通按键 | 字母、空格等直接发送对应键码 |
+| 长按（>500ms） | 发送 Shift 组合键 | 仅对有符号变体的键（数字/符号行），自动发送 Shift+该键 |
+| 上滑（>30px） | 发送 Shift 组合键 | 同长按，上滑优先于长按；滑回原位可取消 |
+| 点击 Shift | 切换 Shift 状态 | 蓝色高亮表示启用，按下任意字母键后自动关闭 |
+| 点击 CapsLock | 切换大写锁定 | 蓝色高亮表示启用，字母键自动发送 Shift+字母 |
+
+无符号变体的按键（字母、空格等）短按即发送，不受 Shift 状态影响。
 
 ### 终端模式
 
@@ -125,12 +206,20 @@ ip -4 addr show | grep 'inet ' | grep -v '127.0.0.1'
 
 | 手势 | 功能 | 说明 |
 |------|------|------|
-| 单指滑动 | 移动鼠标光标 | 40ms 节流（25 帧/秒），1.5 倍灵敏度 |
+| 单指滑动 | 移动鼠标光标 | 40ms 节流（25 帧/秒），默认 2 倍灵敏度（可调节，设置自动保存） |
 | 轻触（<300ms，无明显位移） | 鼠标左键单击 | 300ms 内松开触发 |
 | 双击 | 进入拖拽模式 | 第二次按下时触发 mouse_down，松开手指触发 mouse_up |
 | 双击退出拖拽 | 退出拖拽模式 | 拖拽中再双击可提前释放 |
 
 拖拽模式状态机：`idle` → `pending_tap`（300ms 等待窗口）→ `dragging`（双击检测成功，按住左键拖动）→ 手指松开回到 `idle`。
+
+### 灵敏度设置
+
+触摸板下方提供灵敏度调节滑块（范围 0.3-5.0，默认 2.0）：
+
+- 拖动滑块可实时调整触摸板灵敏度
+- 设置会自动保存到浏览器 localStorage
+- 下次打开页面时自动恢复上次的灵敏度设置
 
 ### 鼠标按键
 
@@ -175,6 +264,7 @@ ip -4 addr show | grep 'inet ' | grep -v '127.0.0.1'
 |------|-------|------|
 | `text` | 文本内容 | 粘贴文本到光标位置 |
 | `key` | Linux 键码（如 `28`、`103`） | 单键按下释放 |
+| `key_combo` | 逗号分隔键码（如 `42,3` 表示 Shift+2） | 多键组合（按住第一个键，按第二个键，再释放） |
 | `shortcut` | `ctrl+a` / `ctrl+z` / `ctrl+c` / `shift+insert` | 组合键 |
 | `mouse_move` | `x`, `y`（相对偏移） | 移动鼠标光标 |
 | `mouse_click` | `left` / `right` | 鼠标单击 |
