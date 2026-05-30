@@ -108,18 +108,19 @@ INPUT_HTML = """
             postData({ type: type, value: value });
         }
 
-        // 2. 触摸板：轻触=左键，连续双击进入拖拽模式，再双击退出
+        // 2. 触摸板：轻触=左键，双击=拖拽，滑动=移动光标
         const pad = document.getElementById('pad');
         let lastX = 0, lastY = 0;
         let totalDx = 0, totalDy = 0;
         let moveQueue = { dx: 0, dy: 0 };
-        let timer = null;
-        const TAP_THRESHOLD = 10;   // 轻触位移容忍像素
-        const DOUBLE_TAP_MS = 300;  // 双击间隔窗口
+        let moveTimer = null;
+        const TAP_THRESHOLD = 10;
+        const DOUBLE_TAP_MS = 300;
 
         // 状态：idle | pending_tap | dragging
         let padState = 'idle';
         let tapTimeout = null;
+        let dragStarted = false;  // 本次 touchstart 是否触发了拖拽
 
         function padSendMove() {
             let sendX = Math.round(moveQueue.dx);
@@ -128,7 +129,7 @@ INPUT_HTML = """
                 postData({ type: 'mouse_move', x: sendX, y: sendY }, true);
             }
             moveQueue = { dx: 0, dy: 0 };
-            timer = null;
+            moveTimer = null;
         }
 
         pad.addEventListener('touchstart', (e) => {
@@ -137,7 +138,17 @@ INPUT_HTML = """
             lastY = touch.clientY;
             totalDx = 0;
             totalDy = 0;
+            dragStarted = false;
             pad.style.background = '#2a2a2a';
+
+            if (padState === 'pending_tap') {
+                // 第二次轻触 → 立即进入拖拽，不让 touchend 重复发 click
+                clearTimeout(tapTimeout);
+                padState = 'dragging';
+                dragStarted = true;
+                postData({ type: 'mouse_down', value: 'left' }, true);
+                pad.style.background = '#333';
+            }
         });
 
         pad.addEventListener('touchmove', (e) => {
@@ -150,21 +161,10 @@ INPUT_HTML = """
             totalDx += Math.abs(dx);
             totalDy += Math.abs(dy);
 
-            // 拖拽模式下，移动即拖动
-            if (padState === 'dragging') {
-                moveQueue.dx += dx * 1.5;
-                moveQueue.dy += dy * 1.5;
-                if (!timer) {
-                    timer = setTimeout(padSendMove, 40);
-                }
-                return;
-            }
-
-            // 非拖拽模式，正常移动光标
             moveQueue.dx += dx * 1.5;
             moveQueue.dy += dy * 1.5;
-            if (!timer) {
-                timer = setTimeout(padSendMove, 40);
+            if (!moveTimer) {
+                moveTimer = setTimeout(padSendMove, 40);
             }
         });
 
@@ -172,40 +172,30 @@ INPUT_HTML = """
             let isTap = totalDx < TAP_THRESHOLD && totalDy < TAP_THRESHOLD;
 
             if (padState === 'dragging') {
-                // 拖拽中松手 → 如果是轻触，退出拖拽模式
-                if (isTap) {
+                if (!dragStarted && isTap) {
+                    // 拖拽中轻触 → 退出拖拽
                     postData({ type: 'mouse_up', value: 'left' }, true);
                     padState = 'idle';
-                    pad.style.background = '#222';
                 }
-                // 如果是滑动后松手，保持拖拽状态（手指再放上来继续拖）
+                // dragStarted=true 说明本次 touch 刚进入拖拽，不发 mouse_up
+                // 滑动后松手也保持拖拽（下次放上来继续拖）
+                pad.style.background = '#222';
                 return;
             }
 
-            if (isTap) {
-                if (padState === 'pending_tap') {
-                    // 第二次轻触 → 进入拖拽模式
-                    clearTimeout(tapTimeout);
-                    padState = 'dragging';
-                    postData({ type: 'mouse_down', value: 'left' }, true);
-                    pad.style.background = '#333';
-                } else {
-                    // 第一次轻触 → 等待双击
-                    padState = 'pending_tap';
-                    tapTimeout = setTimeout(() => {
-                        // 超时未双击 → 单击
-                        if (padState === 'pending_tap') {
-                            postData({ type: 'mouse_click', value: 'left' }, true);
-                            padState = 'idle';
-                        }
-                    }, DOUBLE_TAP_MS);
-                }
-            } else {
+            if (isTap && padState === 'idle') {
+                // 第一次轻触 → 等 300ms 看有没有第二次
+                padState = 'pending_tap';
+                tapTimeout = setTimeout(() => {
+                    if (padState === 'pending_tap') {
+                        postData({ type: 'mouse_click', value: 'left' }, true);
+                        padState = 'idle';
+                    }
+                }, DOUBLE_TAP_MS);
+            } else if (padState === 'pending_tap') {
                 // 滑动后松手，取消双击等待
-                if (padState === 'pending_tap') {
-                    clearTimeout(tapTimeout);
-                    padState = 'idle';
-                }
+                clearTimeout(tapTimeout);
+                padState = 'idle';
             }
 
             pad.style.background = '#222';
