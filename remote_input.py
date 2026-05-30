@@ -55,7 +55,7 @@ INPUT_HTML = """
 
     <div class="btn-group">
         <button class="sub-btn" onclick="sendAction('key', '14')">Back</button>
-        <button class="sub-btn" onclick="sendAction('key', '28')">Enter</button>
+        <button class="sub-btn" onclick="sendAction('mouse_click', 'right')">右键</button>
         <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+a')">全选</button>
         <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+z')">撤销</button>
     </div>
@@ -71,7 +71,7 @@ INPUT_HTML = """
     <div class="mouse-container">
         <button class="click-btn" id="leftClickBtn">左键</button>
         <div class="touchpad" id="pad">滑动移鼠标 · 轻触单击<br>双击进入/退出拖拽</div>
-        <button class="click-btn right-btn" id="rightClickBtn">右键</button>
+        <button class="click-btn right-btn" id="enterBtn">Enter</button>
     </div>
 
     <div id="status"></div>
@@ -208,11 +208,11 @@ INPUT_HTML = """
             postData({ type: 'mouse_click', value: 'left' }, true);
         });
 
-        // 4. 右键单击
-        const rightBtn = document.getElementById('rightClickBtn');
-        rightBtn.addEventListener('touchstart', (e) => {
+        // 4. Enter 键（鼠标区域右侧）
+        const enterBtn = document.getElementById('enterBtn');
+        enterBtn.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            postData({ type: 'mouse_click', value: 'right' }, true);
+            postData({ type: 'key', value: '28' }, true);
         });
     </script>
 </body>
