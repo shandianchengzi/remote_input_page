@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Remote Input - Ubuntu Wayland 手机远程输入工具
+Remote Input - Ubuntu Wayland 手机远程输入工具 (安全增强+快捷键版)
 
 手机浏览器打开后输入文字，点发送即可自动粘贴到电脑当前光标位置。
 专为 Ubuntu Wayland 环境设计，不受 GNOME 沙箱限制。
@@ -12,10 +12,8 @@ Remote Input - Ubuntu Wayland 手机远程输入工具
 """
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import parse_qs
 import subprocess, time, os, sys, secrets, hashlib, json
 
-# 全局配置，通过 update() 修改以避免闭包作用域问题
 config = {"auth": False, "token_raw": None, "sessions": {}, "nonces": {}}
 
 INPUT_HTML = """
@@ -26,42 +24,65 @@ INPUT_HTML = """
     <title>Remote Input</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #121212; color: white; padding: 20px;
-               font-family: -apple-system, sans-serif; }
+        body { background: #121212; color: white; padding: 20px; font-family: -apple-system, sans-serif; }
         h2 { margin-bottom: 15px; font-weight: 400; color: #888; }
-        textarea { width: 100%; height: 200px; font-size: 18px;
-                   padding: 12px; background: #1e1e1e; color: white;
-                   border: 1px solid #333; border-radius: 8px;
-                   resize: vertical; }
-        button { width: 100%; height: 56px; font-size: 20px;
-                 margin-top: 12px; background: #2563eb; color: white;
-                 border: none; border-radius: 8px; cursor: pointer; }
-        button:active { background: #1d4ed8; }
-        #status { margin-top: 10px; color: #4ade80; font-size: 14px;
-                  min-height: 20px; }
+        textarea { width: 100%; height: 180px; font-size: 18px; padding: 12px; background: #1e1e1e;
+                   color: white; border: 1px solid #333; border-radius: 8px; resize: vertical; }
+        .btn-group { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+        .sub-btn { height: 44px; font-size: 14px; background: #333; color: white; border: none; border-radius: 6px; cursor: pointer; }
+        .sub-btn:active { background: #444; }
+        .main-btn { width: 100%; height: 56px; font-size: 20px; margin-top: 12px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        .main-btn:active { background: #1d4ed8; }
+        #status { margin-top: 10px; color: #4ade80; font-size: 14px; min-height: 20px; text-align: center; }
     </style>
 </head>
 <body>
     <h2>Remote Input</h2>
     <textarea id="text" placeholder="在这里输入..."></textarea>
-    <button onclick="send()">发送到电脑</button>
+
+    <div class="btn-group">
+        <button class="sub-btn" onclick="sendAction('key', '28')">Enter</button>
+        <button class="sub-btn" onclick="sendAction('key', '14')">Back</button>
+        <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+a')">全选</button>
+        <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+z')">撤销</button>
+    </div>
+
+    <button class="main-btn" onclick="sendText()">发送到电脑</button>
     <div id="status"></div>
+
     <script>
         let sending = false;
-        function send() {
+        async function postData(payload) {
             if (sending) return;
-            const t = document.getElementById('text');
-            const s = document.getElementById('status');
-            if (t.value.trim() === '') return;
             sending = true;
-            fetch('/', { method: 'POST', body: t.value })
-                .then(r => {
-                    s.textContent = '已发送!';
-                    t.value = '';
-                    sending = false;
-                    setTimeout(() => s.textContent = '', 2000);
-                })
-                .catch(() => { s.textContent = '发送失败'; sending = false; });
+            const s = document.getElementById('status');
+            try {
+                const r = await fetch('/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (r.ok) {
+                    s.textContent = '已执行!';
+                    setTimeout(() => s.textContent = '', 1000);
+                } else if(r.status === 403) {
+                    window.location.href = '/';
+                } else {
+                    s.textContent = '执行失败';
+                }
+            } catch(e) { s.textContent = '网络错误'; }
+            finally { sending = false; }
+        }
+
+        function sendText() {
+            const t = document.getElementById('text');
+            if (t.value.trim() === '') return;
+            postData({ type: 'text', value: t.value });
+            t.value = '';
+        }
+
+        function sendAction(type, value) {
+            postData({ type: type, value: value });
         }
     </script>
 </body>
@@ -76,67 +97,54 @@ LOGIN_HTML = """
     <title>Login - Remote Input</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #121212; color: white; padding: 20px;
-               font-family: -apple-system, sans-serif;
-               display: flex; justify-content: center; align-items: center;
-               min-height: 100vh; }
+        body { background: #121212; color: white; padding: 20px; font-family: -apple-system, sans-serif;
+               display: flex; justify-content: center; align-items: center; min-height: 100vh; }
         .login-box { width: 100%%; max-width: 360px; }
         h2 { margin-bottom: 15px; font-weight: 400; color: #888; text-align: center; }
-        input { width: 100%%; height: 56px; font-size: 18px; padding: 12px;
-                background: #1e1e1e; color: white; border: 1px solid #333;
-                border-radius: 8px; outline: none; }
+        input { width: 100%%; height: 56px; font-size: 18px; padding: 12px; background: #1e1e1e; color: white; border: 1px solid #333; border-radius: 8px; outline: none; }
         input:focus { border-color: #2563eb; }
-        button { width: 100%%; height: 56px; font-size: 20px; margin-top: 12px;
-                 background: #2563eb; color: white; border: none;
-                 border-radius: 8px; cursor: pointer; }
+        button { width: 100%%; height: 56px; font-size: 20px; margin-top: 12px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; }
         button:active { background: #1d4ed8; }
-        #msg { margin-top: 10px; color: #f87171; font-size: 14px;
-               text-align: center; min-height: 20px; }
+        #msg { margin-top: 10px; color: #f87171; font-size: 14px; text-align: center; min-height: 20px; }
     </style>
 </head>
 <body>
     <div class="login-box">
         <h2>Remote Input</h2>
-        <input id="token" type="password" placeholder="请输入 Token"
-               onkeydown="if(event.key==='Enter')login()">
+        <input id="token" type="password" placeholder="请输入 Token" onkeydown="if(event.key==='Enter')login()">
         <button onclick="login()">登录</button>
         <div id="msg"></div>
     </div>
     <script>
-        function pureSha256(str) {
-            function rotr(n, x) { return (x >>> n) | (x << (32 - n)); }
-            const k = [
-                0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
-                0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
-                0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
-                0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
-                0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
-                0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
-                0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
-                0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
-            ];
-            let h = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
-            let words = [];
-            let ascii = unescape(encodeURIComponent(str));
-            for (let i = 0; i < ascii.length; i++) words[i >> 2] |= ascii.charCodeAt(i) << (24 - (i % 4) * 8);
-            let bits = ascii.length * 8;
-            words[bits >> 5] |= 0x80 << (24 - (bits % 32));
-            words[(((bits + 64) >> 9) << 4) + 15] = bits;
-            for (let i = 0; i < words.length; i += 16) {
-                let w = words.slice(i, i + 16);
-                let a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],_h=h[7];
-                for (let j = 0; j < 64; j++) {
-                    if (j >= 16) {
-                        w[j] = (rotr(17,w[j-2])^rotr(19,w[j-2])^(w[j-2]>>>10))+w[j-7]+
-                               (rotr(7,w[j-15])^rotr(18,w[j-15])^(w[j-15]>>>3))+w[j-16];
+        function safeSha256(s) {
+            var chrsz = 8, hexcase = 0;
+            function safe_add(x, y) { var lsw = (x & 0xFFFF) + (y & 0xFFFF), msw = (x >> 16) + (y >> 16) + (lsw >> 16); return (msw << 16) | (lsw & 0xFFFF); }
+            function S(X, n) { return (X >>> n) | (X << (32 - n)); }
+            function R(X, n) { return (X >>> n); }
+            function Ch(x, y, z) { return ((x & y) ^ (~x & z)); }
+            function Maj(x, y, z) { return ((x & y) ^ (x & z) ^ (y & z)); }
+            function Sigma0256(x) { return (S(x, 2) ^ S(x, 13) ^ S(x, 22)); }
+            function Sigma1256(x) { return (S(x, 6) ^ S(x, 11) ^ S(x, 25)); }
+            function gamma0256(x) { return (S(x, 7) ^ S(x, 18) ^ R(x, 3)); }
+            function gamma1256(x) { return (S(x, 17) ^ S(x, 19) ^ R(x, 10)); }
+            function core_sha256(m, l) {
+                var K = [0x428A2F98,0x71374491,0xB5C0FBCF,0xE9B5DBA5,0x3956C25B,0x59F111F1,0x923F82A4,0xAB1C5ED5,0xD807AA98,0x12835B01,0x243185BE,0x550C7DC3,0x72BE5D74,0x80DEB1FE,0x9BDC06A7,0xC19BF174,0xE49B69C1,0xEFBE4786,0x0FC19DC6,0x240CA1CC,0x2DE92C6F,0x4A7484AA,0x5CB0A9DC,0x76F988DA,0x983E5152,0xA831C66D,0xB00327C8,0xBF597FC7,0xC6E00BF3,0xD5A79147,0x6CA6351,0x14292967,0x27B70A85,0x2E1B2138,0x4D2C6DFC,0x53380D13,0x650A7354,0x766A0ABB,0x81C2C92E,0x92722C85,0xA2BFE8A1,0xA81A664B,0xC24B8B70,0xC76C51A3,0xD192E819,0xD6990624,0xF40E3585,0x106AA070,0x19A4C116,0x1E376C08,0x2748774C,0x34B0BCB5,0x391C0CB3,0x4ED8AA4A,0x5B9CCA4F,0x682E6FF3,0x748F82EE,0x78A5636F,0x84C87814,0x8CC70208,0x90BEFFFA,0xA4506CEB,0xBEF9A3F7,0xC67178F2];
+                var HASH = [0x6A09E667,0xBB67AE85,0x3C6EF372,0xA54FF53A,0x510E527F,0x9B05688C,0x1F83D9AB,0x5BE0CD19];
+                var W = new Array(64); var a, b, c, d, e, f, g, h, i, j; var T1, T2; m[l >> 5] |= 0x80 << (24 - l % 32); m[((l + 64 >> 9) << 4) + 15] = l;
+                for (var i = 0; i < m.length; i += 16) {
+                    a = HASH[0]; b = HASH[1]; c = HASH[2]; d = HASH[3]; e = HASH[4]; f = HASH[5]; g = HASH[6]; h = HASH[7];
+                    for (var j = 0; j < 64; j++) {
+                        if (j < 16) W[j] = m[j + i];
+                        else W[j] = safe_add(safe_add(safe_add(gamma1256(W[j - 2]), W[j - 7]), gamma0256(W[j - 15])), W[j - 16]);
+                        T1 = safe_add(safe_add(safe_add(safe_add(h, Sigma1256(e)), Ch(e, f, g)), K[j]), W[j]); T2 = safe_add(Sigma0256(a), Maj(a, b, c));
+                        h = g; g = f; f = e; e = safe_add(d, T1); d = c; c = b; b = a; a = safe_add(T1, T2);
                     }
-                    let t1=_h+(rotr(6,e)^rotr(11,e)^rotr(25,e))+((e&f)^(~e&g))+k[j]+(w[j]|0);
-                    let t2=(rotr(2,a)^rotr(13,a)^rotr(22,a))+((a&b)^(a&c)^(b&c));
-                    _h=g;g=f;f=e;e=(d+t1)|0;d=c;c=b;b=a;a=(t1+t2)|0;
-                }
-                h[0]+=a;h[1]+=b;h[2]+=c;h[3]+=d;h[4]+=e;h[5]+=f;h[6]+=g;h[7]+=_h;
+                    HASH[0] = safe_add(a, HASH[0]); HASH[1] = safe_add(b, HASH[1]); HASH[2] = safe_add(c, HASH[2]); HASH[3] = safe_add(d, HASH[3]); HASH[4] = safe_add(e, HASH[4]); HASH[5] = safe_add(f, HASH[5]); HASH[6] = safe_add(g, HASH[6]); HASH[7] = safe_add(h, HASH[7]);
+                } return HASH;
             }
-            return h.map(v=>('00000000'+(v>>>0).toString(16)).slice(-8)).join('');
+            function str2binb(str) { var bin = Array(); var mask = (1 << chrsz) - 1; for (var i = 0; i < str.length * chrsz; i += chrsz) bin[i >> 5] |= (str.charCodeAt(i / chrsz) & mask) << (24 - i % 32); return bin; }
+            function binb2hex(binarray) { var hex_tab = hexcase ? "0123456789ABCDEF" : "0123456789abcdef"; var str = ""; for (var i = 0; i < binarray.length * 4; i++) { str += hex_tab.charAt((binarray[i >> 2] >> ((3 - i % 4) * 8 + 4)) & 0xF) + hex_tab.charAt((binarray[i >> 2] >> ((3 - i % 4) * 8)) & 0xF); } return str; }
+            return binb2hex(core_sha256(str2binb(unescape(encodeURIComponent(s))), unescape(encodeURIComponent(s)).length * chrsz));
         }
 
         async function login() {
@@ -148,11 +156,11 @@ LOGIN_HTML = """
                 const resNonce = await fetch('/login?get_nonce=1');
                 if (!resNonce.ok) { msg.textContent = '服务器错误'; return; }
                 const { nonce } = await resNonce.json();
-                const clientHash = pureSha256(nonce + token);
+                const clientHash = safeSha256(nonce + token);
                 const r = await fetch('/login', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: 'hash=' + encodeURIComponent(clientHash)
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hash: clientHash })
                 });
                 if (r.ok) {
                     window.location.href = '/';
@@ -160,9 +168,7 @@ LOGIN_HTML = """
                     msg.textContent = 'Token 错误';
                     input.value = '';
                 }
-            } catch(e) {
-                msg.textContent = '请求失败，请检查网络';
-            }
+            } catch(e) { msg.textContent = '请求失败，请检查网络'; }
         }
     </script>
 </body>
@@ -219,8 +225,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/login":
             length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(length).decode("utf-8")
-            params = parse_qs(body)
-            client_hash = params.get("hash", [""])[0]
+            try:
+                data = json.loads(body)
+                client_hash = data.get("hash", "")
+            except:
+                self.send_response(400)
+                self.end_headers()
+                return
 
             now = time.time()
             config["nonces"] = {k: v for k, v in config["nonces"].items() if v > now}
@@ -229,7 +240,7 @@ class Handler(BaseHTTPRequestHandler):
             matched_nonce = None
             for nonce in config["nonces"].keys():
                 expected_hash = hashlib.sha256((nonce + config["token_raw"]).encode()).hexdigest()
-                if client_hash == expected_hash:
+                if client_hash.lower() == expected_hash.lower():
                     login_success = True
                     matched_nonce = nonce
                     break
@@ -238,10 +249,8 @@ class Handler(BaseHTTPRequestHandler):
                 config["nonces"].pop(matched_nonce, None)
                 session_id = secrets.token_hex(32)
                 config["sessions"][sha256_hex(session_id)] = True
-                self.send_response(302)
-                self.send_header("Location", "/")
-                self.send_header("Set-Cookie",
-                    f"session={session_id}; Path=/; HttpOnly; SameSite=Strict")
+                self.send_response(200)
+                self.send_header("Set-Cookie", f"session={session_id}; Path=/; HttpOnly; SameSite=Strict")
                 self.end_headers()
             else:
                 self.send_response(401)
@@ -254,15 +263,33 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         length = int(self.headers["Content-Length"])
-        text = self.rfile.read(length).decode("utf-8")
-        if text:
+        body = self.rfile.read(length).decode("utf-8")
+
+        try:
+            data = json.loads(body)
+            data_type = data.get("type", "text")
+            data_value = data.get("value", "")
+        except:
+            data_type = "text"
+            data_value = body
+
+        if data_value:
             env = os.environ.copy()
             env["DISPLAY"] = ":0"
-            subprocess.run(["wl-copy"], input=text.encode("utf-8"), env=env)
-            subprocess.run(["wl-copy", "-p"], input=text.encode("utf-8"), env=env)
-            time.sleep(0.15)
-            subprocess.run(["ydotool", "key", "-d", "50",
-                           "42:1", "110:1", "110:0", "42:0"], env=env)
+
+            if data_type == "text":
+                subprocess.run(["wl-copy"], input=data_value.encode("utf-8"), env=env)
+                subprocess.run(["wl-copy", "-p"], input=data_value.encode("utf-8"), env=env)
+                time.sleep(0.15)
+                subprocess.run(["ydotool", "key", "-d", "50", "42:1", "110:1", "110:0", "42:0"], env=env)
+            elif data_type == "key":
+                subprocess.run(["ydotool", "key", f"{data_value}:1", f"{data_value}:0"], env=env)
+            elif data_type == "shortcut":
+                if data_value == "ctrl+a":
+                    subprocess.run(["ydotool", "key", "-d", "20", "29:1", "30:1", "30:0", "29:0"], env=env)
+                elif data_value == "ctrl+z":
+                    subprocess.run(["ydotool", "key", "-d", "20", "29:1", "44:1", "44:0", "29:0"], env=env)
+
         self.send_response(200)
         self.end_headers()
 
