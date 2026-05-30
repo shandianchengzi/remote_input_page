@@ -76,7 +76,7 @@ INPUT_HTML = """
 
     <div class="mouse-container">
         <button class="click-btn" id="leftClickBtn">左键</button>
-        <div class="touchpad" id="pad">滑动移鼠标 · 轻触单击<br>双击进入/退出拖拽</div>
+        <div class="touchpad" id="pad">滑动移鼠标 · 轻触单击<br>双击拖拽 · 双指滚动</div>
         <button class="click-btn right-btn" id="enterBtn">Enter</button>
     </div>
 
@@ -114,7 +114,7 @@ INPUT_HTML = """
             postData({ type: type, value: value });
         }
 
-        // 2. 触摸板：轻触=左键，双击=拖拽，滑动=移动光标
+        // 2. 触摸板：单指=移动/轻触单击/双击拖拽，双指=滚动
         const pad = document.getElementById('pad');
         let lastX = 0, lastY = 0;
         let totalDx = 0, totalDy = 0;
@@ -123,10 +123,16 @@ INPUT_HTML = """
         const TAP_THRESHOLD = 10;
         const DOUBLE_TAP_MS = 300;
 
-        // 状态：idle | pending_tap | dragging
+        // 单指状态：idle | pending_tap | dragging
         let padState = 'idle';
         let tapTimeout = null;
-        let dragStarted = false;  // 本次 touchstart 是否触发了拖拽
+        let dragStarted = false;
+
+        // 双指滚动
+        let twoFingerLastY = 0;
+        let isTwoFinger = false;
+        let scrollQueue = 0;
+        let scrollTimer = null;
 
         function padSendMove() {
             let sendX = Math.round(moveQueue.dx);
@@ -138,7 +144,27 @@ INPUT_HTML = """
             moveTimer = null;
         }
 
+        function padSendScroll() {
+            if (scrollQueue !== 0) {
+                // 每 40ms 最多发送一次滚动，dy 正=向下滚
+                postData({ type: 'mouse_scroll', y: Math.round(scrollQueue) }, true);
+                scrollQueue = 0;
+            }
+            scrollTimer = null;
+        }
+
         pad.addEventListener('touchstart', (e) => {
+            // 双指触摸 → 进入滚动模式
+            if (e.touches.length === 2) {
+                isTwoFinger = true;
+                twoFingerLastY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                scrollQueue = 0;
+                pad.style.background = '#1a1a2a';
+                return;
+            }
+
+            // 单指触摸
+            isTwoFinger = false;
             const touch = e.touches[0];
             lastX = touch.clientX;
             lastY = touch.clientY;
@@ -148,7 +174,6 @@ INPUT_HTML = """
             pad.style.background = '#2a2a2a';
 
             if (padState === 'pending_tap') {
-                // 第二次轻触 → 立即进入拖拽，不让 touchend 重复发 click
                 clearTimeout(tapTimeout);
                 padState = 'dragging';
                 dragStarted = true;
@@ -158,6 +183,20 @@ INPUT_HTML = """
         });
 
         pad.addEventListener('touchmove', (e) => {
+            // 双指滚动
+            if (isTwoFinger && e.touches.length === 2) {
+                let avgY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                let dy = avgY - twoFingerLastY;
+                twoFingerLastY = avgY;
+                // 灵敏度 0.5 倍，觉得慢可调大
+                scrollQueue += dy * 0.5;
+                if (!scrollTimer) {
+                    scrollTimer = setTimeout(padSendScroll, 40);
+                }
+                return;
+            }
+
+            // 单指移动
             if (e.touches.length !== 1) return;
             const touch = e.touches[0];
             let dx = touch.clientX - lastX;
@@ -174,23 +213,28 @@ INPUT_HTML = """
             }
         });
 
-        pad.addEventListener('touchend', () => {
+        pad.addEventListener('touchend', (e) => {
+            // 双指松开 → 退出滚动模式
+            if (isTwoFinger) {
+                if (e.touches.length < 2) {
+                    isTwoFinger = false;
+                    pad.style.background = '#222';
+                }
+                return;
+            }
+
             let isTap = totalDx < TAP_THRESHOLD && totalDy < TAP_THRESHOLD;
 
             if (padState === 'dragging') {
                 if (!dragStarted && isTap) {
-                    // 拖拽中轻触 → 退出拖拽
                     postData({ type: 'mouse_up', value: 'left' }, true);
                     padState = 'idle';
                 }
-                // dragStarted=true 说明本次 touch 刚进入拖拽，不发 mouse_up
-                // 滑动后松手也保持拖拽（下次放上来继续拖）
                 pad.style.background = '#222';
                 return;
             }
 
             if (isTap && padState === 'idle') {
-                // 第一次轻触 → 等 300ms 看有没有第二次
                 padState = 'pending_tap';
                 tapTimeout = setTimeout(() => {
                     if (padState === 'pending_tap') {
@@ -199,7 +243,6 @@ INPUT_HTML = """
                     }
                 }, DOUBLE_TAP_MS);
             } else if (padState === 'pending_tap') {
-                // 滑动后松手，取消双击等待
                 clearTimeout(tapTimeout);
                 padState = 'idle';
             }
@@ -433,6 +476,9 @@ class Handler(BaseHTTPRequestHandler):
             # 0x80=up base, 0x00=left, 0x01=right
             key_code = "0x81" if click_val == "right" else "0x80"
             subprocess.run(["ydotool", "click", key_code], env=env)
+        elif data_type == "mouse_scroll":
+            dy = data.get("y", 0)
+            subprocess.run(["ydotool", "mousemove", "--wheel", "-y", str(dy)], env=env)
         elif data_type == "text" and data_value:
             subprocess.run(["wl-copy"], input=data_value.encode("utf-8"), env=env)
             subprocess.run(["wl-copy", "-p"], input=data_value.encode("utf-8"), env=env)
