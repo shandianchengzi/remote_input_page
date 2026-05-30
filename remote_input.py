@@ -189,7 +189,7 @@ INPUT_HTML = """
                 let dy = avgY - twoFingerLastY;
                 twoFingerLastY = avgY;
                 // 灵敏度 0.5 倍，觉得慢可调大
-                scrollQueue += dy * 0.5;
+                scrollQueue += dy * 1.5;
                 if (!scrollTimer) {
                     scrollTimer = setTimeout(padSendScroll, 40);
                 }
@@ -479,7 +479,11 @@ class Handler(BaseHTTPRequestHandler):
             subprocess.run(["ydotool", "click", key_code], env=env)
         elif data_type == "mouse_scroll":
             dy = data.get("y", 0)
-            subprocess.run(["ydotool", "mousemove", "--wheel", "-y", str(dy)], env=env)
+            if dy != 0:
+                scroll_code = "0xC5" if dy > 0 else "0xC4"
+                loops = max(1, min(int(abs(dy)), 5))
+                for _ in range(loops):
+                    subprocess.run(["ydotool", "click", scroll_code], env=env)
         elif data_type == "text" and data_value:
             subprocess.run(["wl-copy"], input=data_value.encode("utf-8"), env=env)
             subprocess.run(["wl-copy", "-p"], input=data_value.encode("utf-8"), env=env)
