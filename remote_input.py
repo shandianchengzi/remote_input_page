@@ -179,6 +179,8 @@ INPUT_HTML = """
                 dragStarted = true;
                 postData({ type: 'mouse_down', value: 'left' }, true);
                 pad.style.background = '#333';
+                // 重置标记，让本次 touchend 能正常发送 mouse_up
+                dragStarted = false;
             }
         });
 
