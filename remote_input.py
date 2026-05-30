@@ -96,7 +96,7 @@ INPUT_HTML = """
             <button class="scroll-btn" onclick="sendAction('key', '104')">PgUp</button>
             <button class="scroll-btn" onclick="sendAction('key', '109')">PgDn</button>
         </div>
-        <div class="touchpad" id="pad">滑动移鼠标 · 轻触单击<br>双击拖拽</div>
+        <div class="touchpad" id="pad"></div>
         <button class="click-btn right-btn" id="enterBtn">Enter</button>
     </div>
 
