@@ -54,8 +54,8 @@ INPUT_HTML = """
     <textarea id="text" placeholder="在这里输入文字..."></textarea>
 
     <div class="btn-group">
-        <button class="sub-btn" onclick="sendAction('key', '28')">Enter</button>
         <button class="sub-btn" onclick="sendAction('key', '14')">Back</button>
+        <button class="sub-btn" onclick="sendAction('key', '28')">Enter</button>
         <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+a')">全选</button>
         <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+z')">撤销</button>
     </div>
