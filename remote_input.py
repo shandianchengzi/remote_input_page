@@ -37,9 +37,11 @@ INPUT_HTML = """
 
         /* 鼠标控制区布局 */
         .mouse-container { display: flex; gap: 10px; margin-top: 15px; height: 180px; }
-        .click-btn { width: 70px; height: 100%; background: #dc2626; color: white; border: none; border-radius: 8px;
-                     font-size: 16px; font-weight: bold; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+        .click-btn { width: 60px; height: 100%; background: #dc2626; color: white; border: none; border-radius: 8px;
+                     font-size: 14px; font-weight: bold; cursor: pointer; -webkit-tap-highlight-color: transparent; }
         .click-btn:active { background: #b91c1c; }
+        .click-btn.right-btn { background: #7c3aed; }
+        .click-btn.right-btn:active { background: #6d28d9; }
         .touchpad { flex: 1; height: 100%; background: #222; border: 2px dashed #444; border-radius: 8px;
                     display: flex; justify-content: center; align-items: center; color: #666; font-size: 13px;
                     position: relative; touch-action: none; text-align: center; padding: 10px; }
@@ -57,12 +59,19 @@ INPUT_HTML = """
         <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+a')">全选</button>
         <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+z')">撤销</button>
     </div>
+    <div class="btn-group">
+        <button class="sub-btn" onclick="sendAction('key', '103')">↑</button>
+        <button class="sub-btn" onclick="sendAction('key', '108')">↓</button>
+        <button class="sub-btn" onclick="sendAction('key', '105')">←</button>
+        <button class="sub-btn" onclick="sendAction('key', '106')">→</button>
+    </div>
 
     <button class="main-btn" onclick="sendText()">发送文本到电脑</button>
 
     <div class="mouse-container">
-        <button class="click-btn" id="leftClickBtn">左键<br>单击</button>
-        <div class="touchpad" id="pad">单指滑动移动鼠标<br>双指轻触触发右键</div>
+        <button class="click-btn" id="leftClickBtn">左键</button>
+        <div class="touchpad" id="pad">滑动控制鼠标指针</div>
+        <button class="click-btn right-btn" id="rightClickBtn">右键</button>
     </div>
 
     <div id="status"></div>
@@ -107,12 +116,6 @@ INPUT_HTML = """
         let timer = null;
 
         pad.addEventListener('touchstart', (e) => {
-            // 双指轻触 = 右键
-            if (e.touches.length === 2) {
-                isMoving = false;
-                postData({ type: 'mouse_click', value: 'right' }, true);
-                return;
-            }
             const touch = e.touches[0];
             lastX = touch.clientX;
             lastY = touch.clientY;
@@ -156,6 +159,13 @@ INPUT_HTML = """
         leftBtn.addEventListener('touchstart', (e) => {
             e.preventDefault();
             postData({ type: 'mouse_click', value: 'left' }, true);
+        });
+
+        // 4. 右键单击
+        const rightBtn = document.getElementById('rightClickBtn');
+        rightBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            postData({ type: 'mouse_click', value: 'right' }, true);
         });
     </script>
 </body>
