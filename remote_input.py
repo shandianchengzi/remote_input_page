@@ -27,6 +27,9 @@ INPUT_HTML = """
         * { box-sizing: border-box; margin: 0; padding: 0; touch-action: pan-x pan-y; }
         body { background: #121212; color: white; padding: 15px; font-family: -apple-system, sans-serif; -webkit-user-select: none; }
         h2 { margin-bottom: 10px; font-weight: 400; color: #888; font-size: 18px; }
+        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .term-label { color: #a855f7; font-size: 14px; display: flex; align-items: center; gap: 4px; cursor: pointer; }
+        .term-label input { accent-color: #a855f7; }
         textarea { width: 100%; height: 120px; font-size: 16px; padding: 10px; background: #1e1e1e;
                    color: white; border: 1px solid #333; border-radius: 8px; resize: none; touch-action: auto; }
         .btn-group { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
@@ -55,7 +58,10 @@ INPUT_HTML = """
     </style>
 </head>
 <body>
-    <h2>Remote Input</h2>
+    <div class="header-row">
+        <h2>Remote Input</h2>
+        <label class="term-label"><input type="checkbox" id="termMode"> 终端模式</label>
+    </div>
     <textarea id="text" placeholder="在这里输入文字..."></textarea>
 
     <div class="btn-group">
@@ -96,6 +102,7 @@ INPUT_HTML = """
 
         // 1. 基础文本与按键发送（带静默模式，鼠标高频请求不触发状态提示）
         async function postData(payload, quiet=false) {
+            payload.term_mode = document.getElementById('termMode').checked;
             if (sending && !quiet) return;
             if (!quiet) sending = true;
             const s = document.getElementById('status');
@@ -441,6 +448,7 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(body)
             data_type = data.get("type", "text")
             data_value = data.get("value", "")
+            term_mode = data.get("term_mode", False)
         except:
             data_type = "text"
             data_value = body
@@ -469,26 +477,48 @@ class Handler(BaseHTTPRequestHandler):
         elif data_type == "mouse_scroll":
             dy = data.get("y", 0)
             if dy != 0:
-                scroll_code = "0xC5" if dy > 0 else "0xC4"
-                loops = max(1, min(int(abs(dy)), 5))
-                for _ in range(loops):
-                    subprocess.run(["ydotool", "click", scroll_code], env=env)
+                if term_mode:
+                    # 终端模式: 滚动 → Ctrl+Shift+PageUp/PageDown
+                    if dy > 0:
+                        subprocess.run(["ydotool", "key", "-d", "20", "29:1", "42:1", "109:1", "109:0", "42:0", "29:0"], env=env)
+                    else:
+                        subprocess.run(["ydotool", "key", "-d", "20", "29:1", "42:1", "104:1", "104:0", "42:0", "29:0"], env=env)
+                else:
+                    scroll_code = "0xC5" if dy > 0 else "0xC4"
+                    loops = max(1, min(int(abs(dy)), 5))
+                    for _ in range(loops):
+                        subprocess.run(["ydotool", "click", scroll_code], env=env)
         elif data_type == "text" and data_value:
             subprocess.run(["wl-copy"], input=data_value.encode("utf-8"), env=env)
             subprocess.run(["wl-copy", "-p"], input=data_value.encode("utf-8"), env=env)
             time.sleep(0.15)
             subprocess.run(["ydotool", "key", "-d", "50", "42:1", "110:1", "110:0", "42:0"], env=env)
         elif data_type == "key" and data_value:
-            subprocess.run(["ydotool", "key", f"{data_value}:1", f"{data_value}:0"], env=env)
+            if term_mode and data_value == "103":
+                # 终端模式: ↑ → Ctrl+Shift+PageUp (29+42+104)
+                subprocess.run(["ydotool", "key", "-d", "20", "29:1", "42:1", "104:1", "104:0", "42:0", "29:0"], env=env)
+            elif term_mode and data_value == "108":
+                # 终端模式: ↓ → Ctrl+Shift+PageDown (29+42+109)
+                subprocess.run(["ydotool", "key", "-d", "20", "29:1", "42:1", "109:1", "109:0", "42:0", "29:0"], env=env)
+            else:
+                subprocess.run(["ydotool", "key", f"{data_value}:1", f"{data_value}:0"], env=env)
         elif data_type == "shortcut" and data_value:
             if data_value == "ctrl+a":
                 subprocess.run(["ydotool", "key", "-d", "20", "29:1", "30:1", "30:0", "29:0"], env=env)
             elif data_value == "ctrl+z":
                 subprocess.run(["ydotool", "key", "-d", "20", "29:1", "44:1", "44:0", "29:0"], env=env)
             elif data_value == "ctrl+c":
-                subprocess.run(["ydotool", "key", "-d", "20", "29:1", "46:1", "46:0", "29:0"], env=env)
+                if term_mode:
+                    # 终端模式: Ctrl+Shift+C (29+42+46)
+                    subprocess.run(["ydotool", "key", "-d", "20", "29:1", "42:1", "46:1", "46:0", "42:0", "29:0"], env=env)
+                else:
+                    subprocess.run(["ydotool", "key", "-d", "20", "29:1", "46:1", "46:0", "29:0"], env=env)
             elif data_value == "shift+insert":
-                subprocess.run(["ydotool", "key", "-d", "20", "42:1", "110:1", "110:0", "42:0"], env=env)
+                if term_mode:
+                    # 终端模式: Ctrl+Shift+V (29+42+47)
+                    subprocess.run(["ydotool", "key", "-d", "20", "29:1", "42:1", "47:1", "47:0", "42:0", "29:0"], env=env)
+                else:
+                    subprocess.run(["ydotool", "key", "-d", "20", "42:1", "110:1", "110:0", "42:0"], env=env)
 
         self.send_response(200)
         self.end_headers()
