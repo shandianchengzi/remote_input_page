@@ -19,7 +19,7 @@ remote_input_page/
 - 手机和电脑在同一局域网
 
 已测试的依赖版本：
-- `ydotool` 1.0.4（注意：1.x 版本使用 `mousemove` 命令，新版 1.1+ 改为 `pointer shift`）
+- `ydotool` 1.0.4
 - `wl-clipboard` 2.2.1
 
 ## 安装
@@ -29,8 +29,6 @@ remote_input_page/
 ```bash
 sudo apt install -y wl-clipboard ydotool
 ```
-
-> **ydotool 版本兼容性**：本脚本自动适配 ydotool 1.x（`mousemove`）和 1.1+（`pointer shift`）两种命令格式。
 
 ### 2. 配置用户权限
 
@@ -116,8 +114,8 @@ ip -4 addr show | grep 'inet ' | grep -v '127.0.0.1'
 - 使用 Shift+Insert 而非 Ctrl+V，兼容终端和图形界面
 - 按键事件间加 50ms 延迟，避免系统输入状态机不同步
 - 支持快捷键注入（Enter、Backspace、Ctrl+A、Ctrl+z），通过 ydotool 直接模拟按键
-- 支持虚拟触摸板：前端 40ms 节流合并坐标偏移，通过 `ydotool mousemove`（1.x）或 `ydotool pointer shift`（1.1+）实现平滑鼠标移动
-- 支持鼠标单击：通过 `ydotool click` 模拟左键（`0:1`）或右键（`0:2`）
+- 支持虚拟触摸板：前端 40ms 节流合并坐标偏移，通过 `ydotool mousemove -x -y` 实现平滑鼠标移动
+- 支持鼠标单击：通过 `ydotool click` 模拟左键（`0xC0`）或右键（`0xC1`）
 - 前后端通讯使用 JSON 格式，支持 `text`（文本）、`key`（单键）、`shortcut`（组合键）、`mouse_move`（鼠标移动）、`mouse_click`（鼠标点击）五种类型
 - 可选登录认证：挑战-应答机制，token 在浏览器端 SHA-256 哈希后传输，不明文传输
 

@@ -15,22 +15,7 @@ Remote Input - Ubuntu Wayland 手机远程输入工具 (全功能版：含虚拟
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import subprocess, time, os, sys, secrets, hashlib, json
 
-config = {"auth": False, "token_raw": None, "sessions": {}, "nonces": {}, "mouse_cmd": ["ydotool", "mousemove", "--"]}
-
-def detect_ydotool_version():
-    try:
-        result = subprocess.run(["ydotool", "mousemove", "--", "0", "0"],
-                                capture_output=True, timeout=3)
-        # mousemove 命令存在（无论是否报坐标错，只要不是 "Unknown command" 就行）
-        if b"Unknown command" not in result.stderr:
-            config["mouse_cmd"] = ["ydotool", "mousemove", "--"]
-            print("检测到 ydotool 1.x（mousemove 模式）")
-            return
-    except Exception:
-        pass
-    # fallback: 新版本用 pointer shift
-    config["mouse_cmd"] = ["ydotool", "pointer", "shift"]
-    print("检测到 ydotool 1.1+（pointer shift 模式）")
+config = {"auth": False, "token_raw": None, "sessions": {}, "nonces": {}}
 
 INPUT_HTML = """
 <!DOCTYPE html>
@@ -370,13 +355,11 @@ class Handler(BaseHTTPRequestHandler):
         if data_type == "mouse_move":
             mx = data.get("x", 0)
             my = data.get("y", 0)
-            subprocess.run(config["mouse_cmd"] + [str(mx), str(my)], env=env)
+            subprocess.run(["ydotool", "mousemove", "-x", str(mx), "-y", str(my)], env=env)
         elif data_type == "mouse_click":
             click_val = data.get("value", "left")
-            if click_val == "right":
-                subprocess.run(["ydotool", "click", "0:2"], env=env)
-            else:
-                subprocess.run(["ydotool", "click", "0:1"], env=env)
+            key_code = "0xC1" if click_val == "right" else "0xC0"
+            subprocess.run(["ydotool", "click", key_code], env=env)
         elif data_type == "text" and data_value:
             subprocess.run(["wl-copy"], input=data_value.encode("utf-8"), env=env)
             subprocess.run(["wl-copy", "-p"], input=data_value.encode("utf-8"), env=env)
@@ -416,8 +399,6 @@ if __name__ == "__main__":
         token = custom_token or secrets.token_hex(16)
         config.update(auth=True, token_raw=token)
         print(f"认证已启用，Token: {token}")
-
-    detect_ydotool_version()
 
     server = HTTPServer(("0.0.0.0", port), Handler)
     print(f"服务已启动，端口: {port}")
