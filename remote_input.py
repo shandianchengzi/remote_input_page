@@ -36,12 +36,17 @@ INPUT_HTML = """
         .main-btn:active { background: #1d4ed8; }
 
         /* 鼠标控制区布局 */
-        .mouse-container { display: flex; gap: 10px; margin-top: 15px; height: 180px; }
-        .click-btn { width: 60px; height: 100%; background: #dc2626; color: white; border: none; border-radius: 8px;
+        .mouse-container { display: flex; gap: 8px; margin-top: 15px; height: 180px; }
+        .click-btn { width: 56px; height: 100%; background: #dc2626; color: white; border: none; border-radius: 8px;
                      font-size: 14px; font-weight: bold; cursor: pointer; -webkit-tap-highlight-color: transparent; }
         .click-btn:active { background: #b91c1c; }
         .click-btn.right-btn { background: #7c3aed; }
         .click-btn.right-btn:active { background: #6d28d9; }
+        .scroll-col { display: flex; flex-direction: column; gap: 4px; width: 40px; height: 100%; }
+        .scroll-btn { flex: 1; background: #333; color: white; border: none; border-radius: 6px;
+                      font-size: 18px; cursor: pointer; -webkit-tap-highlight-color: transparent; display: flex;
+                      justify-content: center; align-items: center; }
+        .scroll-btn:active { background: #555; }
         .touchpad { flex: 1; height: 100%; background: #222; border: 2px dashed #444; border-radius: 8px;
                     display: flex; justify-content: center; align-items: center; color: #666; font-size: 13px;
                     position: relative; touch-action: none; text-align: center; padding: 10px; }
@@ -76,7 +81,11 @@ INPUT_HTML = """
 
     <div class="mouse-container">
         <button class="click-btn" id="leftClickBtn">左键</button>
-        <div class="touchpad" id="pad">滑动移鼠标 · 轻触单击<br>双击拖拽 · 双指滚动</div>
+        <div class="scroll-col">
+            <button class="scroll-btn" id="scrollUpBtn">▲</button>
+            <button class="scroll-btn" id="scrollDownBtn">▼</button>
+        </div>
+        <div class="touchpad" id="pad">滑动移鼠标 · 轻触单击<br>双击拖拽</div>
         <button class="click-btn right-btn" id="enterBtn">Enter</button>
     </div>
 
@@ -114,7 +123,7 @@ INPUT_HTML = """
             postData({ type: type, value: value });
         }
 
-        // 2. 触摸板：单指=移动/轻触单击/双击拖拽，双指=滚动
+        // 2. 触摸板：单指=移动/轻触单击/双击拖拽
         const pad = document.getElementById('pad');
         let lastX = 0, lastY = 0;
         let totalDx = 0, totalDy = 0;
@@ -128,12 +137,6 @@ INPUT_HTML = """
         let tapTimeout = null;
         let dragStarted = false;
 
-        // 双指滚动
-        let twoFingerLastY = 0;
-        let isTwoFinger = false;
-        let scrollQueue = 0;
-        let scrollTimer = null;
-
         function padSendMove() {
             let sendX = Math.round(moveQueue.dx);
             let sendY = Math.round(moveQueue.dy);
@@ -144,27 +147,7 @@ INPUT_HTML = """
             moveTimer = null;
         }
 
-        function padSendScroll() {
-            if (scrollQueue !== 0) {
-                // 每 40ms 最多发送一次滚动，dy 正=向下滚
-                postData({ type: 'mouse_scroll', y: Math.round(scrollQueue) }, true);
-                scrollQueue = 0;
-            }
-            scrollTimer = null;
-        }
-
         pad.addEventListener('touchstart', (e) => {
-            // 双指触摸 → 进入滚动模式
-            if (e.touches.length === 2) {
-                isTwoFinger = true;
-                twoFingerLastY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-                scrollQueue = 0;
-                pad.style.background = '#1a1a2a';
-                return;
-            }
-
-            // 单指触摸
-            isTwoFinger = false;
             const touch = e.touches[0];
             lastX = touch.clientX;
             lastY = touch.clientY;
@@ -179,26 +162,11 @@ INPUT_HTML = """
                 dragStarted = true;
                 postData({ type: 'mouse_down', value: 'left' }, true);
                 pad.style.background = '#333';
-                // 重置标记，让本次 touchend 能正常发送 mouse_up
                 dragStarted = false;
             }
         });
 
         pad.addEventListener('touchmove', (e) => {
-            // 双指滚动
-            if (isTwoFinger && e.touches.length === 2) {
-                let avgY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-                let dy = avgY - twoFingerLastY;
-                twoFingerLastY = avgY;
-                // 灵敏度 0.5 倍，觉得慢可调大
-                scrollQueue += dy * 1.5;
-                if (!scrollTimer) {
-                    scrollTimer = setTimeout(padSendScroll, 40);
-                }
-                return;
-            }
-
-            // 单指移动
             if (e.touches.length !== 1) return;
             const touch = e.touches[0];
             let dx = touch.clientX - lastX;
@@ -215,20 +183,10 @@ INPUT_HTML = """
             }
         });
 
-        pad.addEventListener('touchend', (e) => {
-            // 双指松开 → 退出滚动模式
-            if (isTwoFinger) {
-                if (e.touches.length < 2) {
-                    isTwoFinger = false;
-                    pad.style.background = '#222';
-                }
-                return;
-            }
-
+        pad.addEventListener('touchend', () => {
             let isTap = totalDx < TAP_THRESHOLD && totalDy < TAP_THRESHOLD;
 
             if (padState === 'dragging') {
-                // 手指离开触摸板 → 立即停止拖拽
                 if (!dragStarted) {
                     postData({ type: 'mouse_up', value: 'left' }, true);
                 }
@@ -252,6 +210,35 @@ INPUT_HTML = """
 
             pad.style.background = '#222';
         });
+
+        // 3. 滚轮按钮（支持长按连续滚动）
+        function setupScrollBtn(btnId, direction) {
+            const btn = document.getElementById(btnId);
+            let scrollInterval = null;
+            const SCROLL_DELAY = 80;
+
+            btn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                postData({ type: 'mouse_scroll', y: direction }, true);
+                scrollInterval = setInterval(() => {
+                    postData({ type: 'mouse_scroll', y: direction }, true);
+                }, SCROLL_DELAY);
+            });
+
+            btn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                clearInterval(scrollInterval);
+                scrollInterval = null;
+            });
+
+            btn.addEventListener('touchcancel', (e) => {
+                e.preventDefault();
+                clearInterval(scrollInterval);
+                scrollInterval = null;
+            });
+        }
+        setupScrollBtn('scrollUpBtn', -1);
+        setupScrollBtn('scrollDownBtn', 1);
 
         // 3. 左键单击
         const leftBtn = document.getElementById('leftClickBtn');
