@@ -14,9 +14,13 @@ remote_input_page/
 
 ## 环境要求
 
-- Ubuntu 22.04+（Wayland，GNOME 桌面）
-- Python 3（系统自带）
+- Ubuntu 22.04+（Wayland，GNOME 桌面），测试环境：Ubuntu 26.04
+- Python 3（系统自带），测试版本：3.14
 - 手机和电脑在同一局域网
+
+已测试的依赖版本：
+- `ydotool` 1.0.4（注意：1.x 版本使用 `mousemove` 命令，新版 1.1+ 改为 `pointer shift`）
+- `wl-clipboard` 2.2.1
 
 ## 安装
 
@@ -25,6 +29,8 @@ remote_input_page/
 ```bash
 sudo apt install -y wl-clipboard ydotool
 ```
+
+> **ydotool 版本兼容性**：本脚本自动适配 ydotool 1.x（`mousemove`）和 1.1+（`pointer shift`）两种命令格式。
 
 ### 2. 配置用户权限
 
@@ -82,6 +88,16 @@ ip -4 addr show | grep 'inet ' | grep -v '127.0.0.1'
 | 全选 | Ctrl+A | 29+30 |
 | 撤销 | Ctrl+Z | 29+44 |
 
+### 虚拟触摸板 & 鼠标左键
+
+页面下方提供虚拟触摸板区域和左键单击按钮：
+
+- **触摸板区域**：手指在灰色虚线区域内滑动，电脑光标会实时跟随移动。采用 40ms 节流（每秒 25 帧）避免请求风暴
+- **左键单击**：红色大按钮，点击即可在电脑光标位置触发一次鼠标左键点击
+- **右键单击**：在触摸板区域双指轻触即可触发鼠标右键
+- 灵敏度系数默认 1.5 倍，可在 JS 中调整 `moveQueue.dx += dx * 1.5` 的倍数
+- 触摸板使用 `touch-action: none` 防止滑动时页面跟随滚动
+
 ### 停止服务
 
 终端按 `Ctrl+C`。
@@ -100,7 +116,9 @@ ip -4 addr show | grep 'inet ' | grep -v '127.0.0.1'
 - 使用 Shift+Insert 而非 Ctrl+V，兼容终端和图形界面
 - 按键事件间加 50ms 延迟，避免系统输入状态机不同步
 - 支持快捷键注入（Enter、Backspace、Ctrl+A、Ctrl+z），通过 ydotool 直接模拟按键
-- 前后端通讯使用 JSON 格式，支持 `text`（文本）、`key`（单键）、`shortcut`（组合键）三种类型
+- 支持虚拟触摸板：前端 40ms 节流合并坐标偏移，通过 `ydotool mousemove`（1.x）或 `ydotool pointer shift`（1.1+）实现平滑鼠标移动
+- 支持鼠标单击：通过 `ydotool click` 模拟左键（`0:1`）或右键（`0:2`）
+- 前后端通讯使用 JSON 格式，支持 `text`（文本）、`key`（单键）、`shortcut`（组合键）、`mouse_move`（鼠标移动）、`mouse_click`（鼠标点击）五种类型
 - 可选登录认证：挑战-应答机制，token 在浏览器端 SHA-256 哈希后传输，不明文传输
 
 ## 常见问题

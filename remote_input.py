@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Remote Input - Ubuntu Wayland 手机远程输入工具 (安全增强+快捷键版)
+Remote Input - Ubuntu Wayland 手机远程输入工具 (全功能版：含虚拟触摸板)
 
 手机浏览器打开后输入文字，点发送即可自动粘贴到电脑当前光标位置。
 专为 Ubuntu Wayland 环境设计，不受 GNOME 沙箱限制。
+支持虚拟触摸板（鼠标移动）和左键单击。
 
 可选参数：
   --auth              启用登录认证（自动生成 token 打印到终端）
@@ -14,31 +15,56 @@ Remote Input - Ubuntu Wayland 手机远程输入工具 (安全增强+快捷键�
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import subprocess, time, os, sys, secrets, hashlib, json
 
-config = {"auth": False, "token_raw": None, "sessions": {}, "nonces": {}}
+config = {"auth": False, "token_raw": None, "sessions": {}, "nonces": {}, "mouse_cmd": ["ydotool", "mousemove", "--"]}
+
+def detect_ydotool_version():
+    try:
+        result = subprocess.run(["ydotool", "mousemove", "--", "0", "0"],
+                                capture_output=True, timeout=3)
+        # mousemove 命令存在（无论是否报坐标错，只要不是 "Unknown command" 就行）
+        if b"Unknown command" not in result.stderr:
+            config["mouse_cmd"] = ["ydotool", "mousemove", "--"]
+            print("检测到 ydotool 1.x（mousemove 模式）")
+            return
+    except Exception:
+        pass
+    # fallback: 新版本用 pointer shift
+    config["mouse_cmd"] = ["ydotool", "pointer", "shift"]
+    print("检测到 ydotool 1.1+（pointer shift 模式）")
 
 INPUT_HTML = """
 <!DOCTYPE html>
 <html>
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <title>Remote Input</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #121212; color: white; padding: 20px; font-family: -apple-system, sans-serif; }
-        h2 { margin-bottom: 15px; font-weight: 400; color: #888; }
-        textarea { width: 100%; height: 180px; font-size: 18px; padding: 12px; background: #1e1e1e;
-                   color: white; border: 1px solid #333; border-radius: 8px; resize: vertical; }
-        .btn-group { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
-        .sub-btn { height: 44px; font-size: 14px; background: #333; color: white; border: none; border-radius: 6px; cursor: pointer; }
+        * { box-sizing: border-box; margin: 0; padding: 0; touch-action: pan-x pan-y; }
+        body { background: #121212; color: white; padding: 15px; font-family: -apple-system, sans-serif; -webkit-user-select: none; }
+        h2 { margin-bottom: 10px; font-weight: 400; color: #888; font-size: 18px; }
+        textarea { width: 100%; height: 120px; font-size: 16px; padding: 10px; background: #1e1e1e;
+                   color: white; border: 1px solid #333; border-radius: 8px; resize: none; touch-action: auto; }
+        .btn-group { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
+        .sub-btn { height: 38px; font-size: 13px; background: #333; color: white; border: none; border-radius: 6px; cursor: pointer; }
         .sub-btn:active { background: #444; }
-        .main-btn { width: 100%; height: 56px; font-size: 20px; margin-top: 12px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        .main-btn { width: 100%; height: 46px; font-size: 18px; margin-top: 8px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; }
         .main-btn:active { background: #1d4ed8; }
-        #status { margin-top: 10px; color: #4ade80; font-size: 14px; min-height: 20px; text-align: center; }
+
+        /* 鼠标控制区布局 */
+        .mouse-container { display: flex; gap: 10px; margin-top: 15px; height: 180px; }
+        .click-btn { width: 70px; height: 100%; background: #dc2626; color: white; border: none; border-radius: 8px;
+                     font-size: 16px; font-weight: bold; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+        .click-btn:active { background: #b91c1c; }
+        .touchpad { flex: 1; height: 100%; background: #222; border: 2px dashed #444; border-radius: 8px;
+                    display: flex; justify-content: center; align-items: center; color: #666; font-size: 13px;
+                    position: relative; touch-action: none; text-align: center; padding: 10px; }
+
+        #status { margin-top: 8px; color: #4ade80; font-size: 13px; min-height: 18px; text-align: center; }
     </style>
 </head>
 <body>
     <h2>Remote Input</h2>
-    <textarea id="text" placeholder="在这里输入..."></textarea>
+    <textarea id="text" placeholder="在这里输入文字..."></textarea>
 
     <div class="btn-group">
         <button class="sub-btn" onclick="sendAction('key', '28')">Enter</button>
@@ -47,14 +73,22 @@ INPUT_HTML = """
         <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+z')">撤销</button>
     </div>
 
-    <button class="main-btn" onclick="sendText()">发送到电脑</button>
+    <button class="main-btn" onclick="sendText()">发送文本到电脑</button>
+
+    <div class="mouse-container">
+        <button class="click-btn" id="leftClickBtn">左键<br>单击</button>
+        <div class="touchpad" id="pad">单指滑动移动鼠标<br>双指轻触触发右键</div>
+    </div>
+
     <div id="status"></div>
 
     <script>
         let sending = false;
-        async function postData(payload) {
-            if (sending) return;
-            sending = true;
+
+        // 1. 基础文本与按键发送（带静默模式，鼠标高频请求不触发状态提示）
+        async function postData(payload, quiet=false) {
+            if (sending && !quiet) return;
+            if (!quiet) sending = true;
             const s = document.getElementById('status');
             try {
                 const r = await fetch('/', {
@@ -62,16 +96,11 @@ INPUT_HTML = """
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                if (r.ok) {
-                    s.textContent = '已执行!';
-                    setTimeout(() => s.textContent = '', 1000);
-                } else if(r.status === 403) {
+                if (!r.ok && r.status === 403) {
                     window.location.href = '/';
-                } else {
-                    s.textContent = '执行失败';
                 }
-            } catch(e) { s.textContent = '网络错误'; }
-            finally { sending = false; }
+            } catch(e) { if(!quiet) s.textContent = '网络错误'; }
+            finally { if(!quiet) sending = false; }
         }
 
         function sendText() {
@@ -84,6 +113,65 @@ INPUT_HTML = """
         function sendAction(type, value) {
             postData({ type: type, value: value });
         }
+
+        // 2. 触摸板核心逻辑 (带 40ms 节流)
+        const pad = document.getElementById('pad');
+        let lastX = 0, lastY = 0;
+        let isMoving = false;
+        let moveQueue = { dx: 0, dy: 0 };
+        let timer = null;
+
+        pad.addEventListener('touchstart', (e) => {
+            // 双指轻触 = 右键
+            if (e.touches.length === 2) {
+                isMoving = false;
+                postData({ type: 'mouse_click', value: 'right' }, true);
+                return;
+            }
+            const touch = e.touches[0];
+            lastX = touch.clientX;
+            lastY = touch.clientY;
+            isMoving = true;
+            pad.style.background = '#2a2a2a';
+        });
+
+        pad.addEventListener('touchmove', (e) => {
+            if (!isMoving || e.touches.length !== 1) return;
+            const touch = e.touches[0];
+            let dx = touch.clientX - lastX;
+            let dy = touch.clientY - lastY;
+            lastX = touch.clientX;
+            lastY = touch.clientY;
+
+            // 灵敏度系数 1.5 倍，觉得慢可调大
+            moveQueue.dx += dx * 1.5;
+            moveQueue.dy += dy * 1.5;
+
+            // 节流：40ms 周期打包一次坐标差发送给电脑
+            if (!timer) {
+                timer = setTimeout(() => {
+                    let sendX = Math.round(moveQueue.dx);
+                    let sendY = Math.round(moveQueue.dy);
+                    if (sendX !== 0 || sendY !== 0) {
+                        postData({ type: 'mouse_move', x: sendX, y: sendY }, true);
+                    }
+                    moveQueue = { dx: 0, dy: 0 };
+                    timer = null;
+                }, 40);
+            }
+        });
+
+        pad.addEventListener('touchend', () => {
+            isMoving = false;
+            pad.style.background = '#222';
+        });
+
+        // 3. 左键单击
+        const leftBtn = document.getElementById('leftClickBtn');
+        leftBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            postData({ type: 'mouse_click', value: 'left' }, true);
+        });
     </script>
 </body>
 </html>
@@ -93,7 +181,7 @@ LOGIN_HTML = """
 <!DOCTYPE html>
 <html>
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <title>Login - Remote Input</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -198,6 +286,9 @@ def check_auth(self):
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
+        # 鼠标高频移动请求很多，过滤掉日志，保持终端清爽
+        if "mouse_move" in format or "mouse_click" in format:
+            return
         print(f"[LOG] {format % args}")
 
     def do_GET(self):
@@ -273,22 +364,31 @@ class Handler(BaseHTTPRequestHandler):
             data_type = "text"
             data_value = body
 
-        if data_value:
-            env = os.environ.copy()
-            env["DISPLAY"] = ":0"
+        env = os.environ.copy()
+        env["DISPLAY"] = ":0"
 
-            if data_type == "text":
-                subprocess.run(["wl-copy"], input=data_value.encode("utf-8"), env=env)
-                subprocess.run(["wl-copy", "-p"], input=data_value.encode("utf-8"), env=env)
-                time.sleep(0.15)
-                subprocess.run(["ydotool", "key", "-d", "50", "42:1", "110:1", "110:0", "42:0"], env=env)
-            elif data_type == "key":
-                subprocess.run(["ydotool", "key", f"{data_value}:1", f"{data_value}:0"], env=env)
-            elif data_type == "shortcut":
-                if data_value == "ctrl+a":
-                    subprocess.run(["ydotool", "key", "-d", "20", "29:1", "30:1", "30:0", "29:0"], env=env)
-                elif data_value == "ctrl+z":
-                    subprocess.run(["ydotool", "key", "-d", "20", "29:1", "44:1", "44:0", "29:0"], env=env)
+        if data_type == "mouse_move":
+            mx = data.get("x", 0)
+            my = data.get("y", 0)
+            subprocess.run(config["mouse_cmd"] + [str(mx), str(my)], env=env)
+        elif data_type == "mouse_click":
+            click_val = data.get("value", "left")
+            if click_val == "right":
+                subprocess.run(["ydotool", "click", "0:2"], env=env)
+            else:
+                subprocess.run(["ydotool", "click", "0:1"], env=env)
+        elif data_type == "text" and data_value:
+            subprocess.run(["wl-copy"], input=data_value.encode("utf-8"), env=env)
+            subprocess.run(["wl-copy", "-p"], input=data_value.encode("utf-8"), env=env)
+            time.sleep(0.15)
+            subprocess.run(["ydotool", "key", "-d", "50", "42:1", "110:1", "110:0", "42:0"], env=env)
+        elif data_type == "key" and data_value:
+            subprocess.run(["ydotool", "key", f"{data_value}:1", f"{data_value}:0"], env=env)
+        elif data_type == "shortcut" and data_value:
+            if data_value == "ctrl+a":
+                subprocess.run(["ydotool", "key", "-d", "20", "29:1", "30:1", "30:0", "29:0"], env=env)
+            elif data_value == "ctrl+z":
+                subprocess.run(["ydotool", "key", "-d", "20", "29:1", "44:1", "44:0", "29:0"], env=env)
 
         self.send_response(200)
         self.end_headers()
@@ -316,8 +416,9 @@ if __name__ == "__main__":
         token = custom_token or secrets.token_hex(16)
         config.update(auth=True, token_raw=token)
         print(f"认证已启用，Token: {token}")
-        print(f"手机浏览器打开后需输入此 Token 才能使用")
+
+    detect_ydotool_version()
 
     server = HTTPServer(("0.0.0.0", port), Handler)
-    print(f"服务已启动，手机访问 http://<你的IP>:{port}")
+    print(f"服务已启动，端口: {port}")
     server.serve_forever()
