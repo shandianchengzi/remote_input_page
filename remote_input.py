@@ -47,7 +47,7 @@ INPUT_HTML = """
         .click-btn.right-btn:active { background: #6d28d9; }
         .scroll-col { display: flex; flex-direction: column; gap: 4px; width: 40px; height: 100%; }
         .scroll-btn { flex: 1; background: #333; color: white; border: none; border-radius: 6px;
-                      font-size: 18px; cursor: pointer; -webkit-tap-highlight-color: transparent; display: flex;
+                      font-size: 12px; cursor: pointer; -webkit-tap-highlight-color: transparent; display: flex;
                       justify-content: center; align-items: center; }
         .scroll-btn:active { background: #555; }
         .touchpad { flex: 1; height: 100%; background: #222; border: 2px dashed #444; border-radius: 8px;
@@ -88,8 +88,8 @@ INPUT_HTML = """
     <div class="mouse-container">
         <button class="click-btn" id="leftClickBtn">左键</button>
         <div class="scroll-col">
-            <button class="scroll-btn" id="scrollUpBtn">▲</button>
-            <button class="scroll-btn" id="scrollDownBtn">▼</button>
+            <button class="scroll-btn" onclick="sendAction('key', '104')">PgUp</button>
+            <button class="scroll-btn" onclick="sendAction('key', '109')">PgDn</button>
         </div>
         <div class="touchpad" id="pad">滑动移鼠标 · 轻触单击<br>双击拖拽</div>
         <button class="click-btn right-btn" id="enterBtn">Enter</button>
@@ -217,35 +217,6 @@ INPUT_HTML = """
 
             pad.style.background = '#222';
         });
-
-        // 3. 滚轮按钮（支持长按连续滚动）
-        function setupScrollBtn(btnId, direction) {
-            const btn = document.getElementById(btnId);
-            let scrollInterval = null;
-            const SCROLL_DELAY = 80;
-
-            btn.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                postData({ type: 'mouse_scroll', y: direction }, true);
-                scrollInterval = setInterval(() => {
-                    postData({ type: 'mouse_scroll', y: direction }, true);
-                }, SCROLL_DELAY);
-            });
-
-            btn.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                clearInterval(scrollInterval);
-                scrollInterval = null;
-            });
-
-            btn.addEventListener('touchcancel', (e) => {
-                e.preventDefault();
-                clearInterval(scrollInterval);
-                scrollInterval = null;
-            });
-        }
-        setupScrollBtn('scrollUpBtn', -1);
-        setupScrollBtn('scrollDownBtn', 1);
 
         // 3. 左键单击
         const leftBtn = document.getElementById('leftClickBtn');
@@ -474,31 +445,17 @@ class Handler(BaseHTTPRequestHandler):
             # 0x80=up base, 0x00=left, 0x01=right
             key_code = "0x81" if click_val == "right" else "0x80"
             subprocess.run(["ydotool", "click", key_code], env=env)
-        elif data_type == "mouse_scroll":
-            dy = data.get("y", 0)
-            if dy != 0:
-                if term_mode:
-                    # 终端模式: 滚动 → Ctrl+Shift+PageUp/PageDown
-                    if dy > 0:
-                        subprocess.run(["ydotool", "key", "-d", "20", "29:1", "42:1", "109:1", "109:0", "42:0", "29:0"], env=env)
-                    else:
-                        subprocess.run(["ydotool", "key", "-d", "20", "29:1", "42:1", "104:1", "104:0", "42:0", "29:0"], env=env)
-                else:
-                    scroll_code = "0xC5" if dy > 0 else "0xC4"
-                    loops = max(1, min(int(abs(dy)), 5))
-                    for _ in range(loops):
-                        subprocess.run(["ydotool", "click", scroll_code], env=env)
         elif data_type == "text" and data_value:
             subprocess.run(["wl-copy"], input=data_value.encode("utf-8"), env=env)
             subprocess.run(["wl-copy", "-p"], input=data_value.encode("utf-8"), env=env)
             time.sleep(0.15)
             subprocess.run(["ydotool", "key", "-d", "50", "42:1", "110:1", "110:0", "42:0"], env=env)
         elif data_type == "key" and data_value:
-            if term_mode and data_value == "103":
-                # 终端模式: ↑ → Ctrl+Shift+PageUp (29+42+104)
+            if term_mode and data_value == "104":
+                # 终端模式: PgUp → Ctrl+Shift+PageUp (29+42+104)
                 subprocess.run(["ydotool", "key", "-d", "20", "29:1", "42:1", "104:1", "104:0", "42:0", "29:0"], env=env)
-            elif term_mode and data_value == "108":
-                # 终端模式: ↓ → Ctrl+Shift+PageDown (29+42+109)
+            elif term_mode and data_value == "109":
+                # 终端模式: PgDn → Ctrl+Shift+PageDown (29+42+109)
                 subprocess.run(["ydotool", "key", "-d", "20", "29:1", "42:1", "109:1", "109:0", "42:0", "29:0"], env=env)
             else:
                 subprocess.run(["ydotool", "key", f"{data_value}:1", f"{data_value}:0"], env=env)
