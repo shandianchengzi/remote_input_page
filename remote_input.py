@@ -24,37 +24,42 @@ INPUT_HTML = """
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <title>Remote Input</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; touch-action: pan-x pan-y; }
-        body { background: #121212; color: white; padding: 15px; font-family: -apple-system, sans-serif; -webkit-user-select: none; }
+        * { box-sizing: border-box; margin: 0; padding: 0; touch-action: pan-x pan-y; -webkit-user-select: none; user-select: none; }
+        html, body { background: #121212; color: white; padding: 15px; font-family: -apple-system, sans-serif;
+                     overflow: hidden; height: 100%; position: fixed; width: 100%; }
         h2 { margin-bottom: 10px; font-weight: 400; color: #888; font-size: 18px; }
         .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         .term-label { color: #a855f7; font-size: 14px; display: flex; align-items: center; gap: 4px; cursor: pointer; }
         .term-label input { accent-color: #a855f7; }
-        textarea { width: 100%; height: 120px; font-size: 16px; padding: 10px; background: #1e1e1e;
-                   color: white; border: 1px solid #333; border-radius: 8px; resize: none; touch-action: auto; }
+        textarea { width: 100%; height: 100px; font-size: 16px; padding: 10px; background: #1e1e1e;
+                   color: white; border: 1px solid #333; border-radius: 8px; resize: none; touch-action: auto;
+                   user-select: text; -webkit-user-select: text; }
         .btn-group { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
-        .sub-btn { height: 38px; font-size: 13px; background: #333; color: white; border: none; border-radius: 6px; cursor: pointer; }
+        .sub-btn { height: 36px; font-size: 13px; background: #333; color: white; border: none; border-radius: 6px; cursor: pointer; }
         .sub-btn:active { background: #444; }
-        .main-btn { width: 100%; height: 46px; font-size: 18px; margin-top: 8px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        .main-btn { width: 100%; height: 42px; font-size: 17px; margin-top: 8px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; }
         .main-btn:active { background: #1d4ed8; }
 
         /* 鼠标控制区布局 */
-        .mouse-container { display: flex; gap: 8px; margin-top: 15px; height: 180px; }
-        .click-btn { width: 56px; height: 100%; background: #dc2626; color: white; border: none; border-radius: 8px;
-                     font-size: 14px; font-weight: bold; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+        .mouse-container { display: flex; gap: 8px; margin-top: 12px; height: 170px; }
+        .click-btn { width: 52px; height: 100%; background: #dc2626; color: white; border: none; border-radius: 8px;
+                     font-size: 13px; font-weight: bold; cursor: pointer; -webkit-tap-highlight-color: transparent; }
         .click-btn:active { background: #b91c1c; }
         .click-btn.right-btn { background: #7c3aed; }
         .click-btn.right-btn:active { background: #6d28d9; }
-        .scroll-col { display: flex; flex-direction: column; gap: 4px; width: 40px; height: 100%; }
+        .scroll-col { display: flex; flex-direction: column; gap: 4px; width: 38px; height: 100%; }
         .scroll-btn { flex: 1; background: #333; color: white; border: none; border-radius: 6px;
-                      font-size: 12px; cursor: pointer; -webkit-tap-highlight-color: transparent; display: flex;
+                      font-size: 11px; cursor: pointer; -webkit-tap-highlight-color: transparent; display: flex;
                       justify-content: center; align-items: center; }
         .scroll-btn:active { background: #555; }
         .touchpad { flex: 1; height: 100%; background: #222; border: 2px dashed #444; border-radius: 8px;
-                    display: flex; justify-content: center; align-items: center; color: #666; font-size: 13px;
-                    position: relative; touch-action: none; text-align: center; padding: 10px; }
+                    display: flex; justify-content: center; align-items: center; color: #666; font-size: 12px;
+                    position: relative; touch-action: none; text-align: center; padding: 8px;
+                    user-select: none; -webkit-user-select: none; }
 
-        #status { margin-top: 8px; color: #4ade80; font-size: 13px; min-height: 18px; text-align: center; }
+        #status { margin-top: 6px; color: #4ade80; font-size: 12px; min-height: 16px; text-align: center; }
+        .help-text { margin-top: 10px; color: #555; font-size: 11px; line-height: 1.6; }
+        .help-text b { color: #777; }
     </style>
 </head>
 <body>
@@ -96,6 +101,13 @@ INPUT_HTML = """
     </div>
 
     <div id="status"></div>
+
+    <div class="help-text">
+        <b>触摸板</b>：滑动=移动光标，轻触=左键，双击=拖拽模式（再双击退出）<br>
+        <b>左键/右键</b>：点击对应按钮 | <b>PgUp/PgDn</b>：翻页<br>
+        <b>终端模式</b>：复制/粘贴→Ctrl+Shift+C/V，PgUp/PgDn→Ctrl+Shift+PageUp/Down<br>
+        <b>快捷键</b>：Back=退格，Esc=退出，Tab=制表，↑↓←→=方向键
+    </div>
 
     <script>
         let sending = false;
@@ -217,6 +229,9 @@ INPUT_HTML = """
 
             pad.style.background = '#222';
         });
+
+        // 防止触摸板长按弹出菜单
+        pad.addEventListener('contextmenu', (e) => e.preventDefault());
 
         // 3. 左键单击
         const leftBtn = document.getElementById('leftClickBtn');
