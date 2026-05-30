@@ -54,8 +54,8 @@ INPUT_HTML = """
     <textarea id="text" placeholder="在这里输入文字..."></textarea>
 
     <div class="btn-group">
-        <button class="sub-btn" onclick="sendAction('key', '14')">Back</button>
         <button class="sub-btn" onclick="sendAction('mouse_click', 'right')">右键</button>
+        <button class="sub-btn" onclick="sendAction('key', '14')">Back</button>
         <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+a')">全选</button>
         <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+z')">撤销</button>
     </div>
@@ -64,6 +64,12 @@ INPUT_HTML = """
         <button class="sub-btn" onclick="sendAction('key', '108')">↓</button>
         <button class="sub-btn" onclick="sendAction('key', '105')">←</button>
         <button class="sub-btn" onclick="sendAction('key', '106')">→</button>
+    </div>
+    <div class="btn-group">
+        <button class="sub-btn" onclick="sendAction('key', '1')">Esc</button>
+        <button class="sub-btn" onclick="sendAction('key', '15')">Tab</button>
+        <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+c')">复制</button>
+        <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+v')">粘贴</button>
     </div>
 
     <button class="main-btn" onclick="sendText()">发送文本到电脑</button>
@@ -439,6 +445,10 @@ class Handler(BaseHTTPRequestHandler):
                 subprocess.run(["ydotool", "key", "-d", "20", "29:1", "30:1", "30:0", "29:0"], env=env)
             elif data_value == "ctrl+z":
                 subprocess.run(["ydotool", "key", "-d", "20", "29:1", "44:1", "44:0", "29:0"], env=env)
+            elif data_value == "ctrl+c":
+                subprocess.run(["ydotool", "key", "-d", "20", "29:1", "46:1", "46:0", "29:0"], env=env)
+            elif data_value == "ctrl+v":
+                subprocess.run(["ydotool", "key", "-d", "20", "29:1", "47:1", "47:0", "29:0"], env=env)
 
         self.send_response(200)
         self.end_headers()
