@@ -6,8 +6,9 @@ Remote Input - Ubuntu Wayland 手机远程输入工具
 专为 Ubuntu Wayland 环境设计，不受 GNOME 沙箱限制。
 
 可选参数：
-  --auth          启用登录认证（token 打印到终端）
-  --port PORT     指定端口（默认 8080）
+  --auth              启用登录认证（自动生成 token 打印到终端）
+  --auth --token XXX  启用登录认证并指定 token
+  --port PORT         指定端口（默认 8080）
 """
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -207,17 +208,23 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     port = 8080
     auth_enabled = False
+    custom_token = None
 
     args = sys.argv[1:]
     if "--auth" in args:
         auth_enabled = True
         args.remove("--auth")
+    if "--token" in args:
+        idx = args.index("--token")
+        custom_token = args[idx + 1]
+        args.remove("--token")
+        args.remove(custom_token)
     if "--port" in args:
         idx = args.index("--port")
         port = int(args[idx + 1])
 
     if auth_enabled:
-        token = secrets.token_hex(16)
+        token = custom_token or secrets.token_hex(16)
         config.update(auth=True, token_hash=sha256_hex(token))
         print(f"认证已启用，Token: {token}")
         print(f"手机浏览器打开后需输入此 Token 才能使用")
