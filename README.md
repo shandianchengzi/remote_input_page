@@ -44,9 +44,17 @@ systemctl --user enable --now ydotool
 
 ### 启动服务
 
+**强烈建议启用认证**，防止同一局域网下其他人误用或滥用：
+
 ```bash
-python3 remote_input.py
+# 自动生成随机 token（打印在终端）
+python3 remote_input.py --auth
+
+# 或指定自己的 token
+python3 remote_input.py --auth --token your_password
 ```
+
+不加 `--auth` 也可以直接使用，但局域网内任何人都能访问。
 
 查看电脑局域网 IP：
 
@@ -58,7 +66,8 @@ ip -4 addr show | grep 'inet ' | grep -v '127.0.0.1'
 
 1. 手机连上和电脑同一个 Wi-Fi
 2. 浏览器打开 `http://<电脑IP>:8080`
-3. 输入文字，点击"发送到电脑"
+3. 如果启用了认证，先输入 Token 登录
+4. 输入文字，点击"发送到电脑"
 
 文字会出现在电脑当前光标位置（终端、浏览器、编辑器均适用）。
 
@@ -79,6 +88,7 @@ ip -4 addr show | grep 'inet ' | grep -v '127.0.0.1'
 - 同时写入 CLIPBOARD 和 PRIMARY 两个剪贴板，确保终端和浏览器都能正确粘贴
 - 使用 Shift+Insert 而非 Ctrl+V，兼容终端和图形界面
 - 按键事件间加 50ms 延迟，避免系统输入状态机不同步
+- 可选登录认证：token 在浏览器端 SHA-256 哈希后传输，不明文传输
 
 ## 常见问题
 
