@@ -74,7 +74,7 @@ INPUT_HTML = """
         <button class="sub-btn" onclick="sendAction('key', '1')">Esc</button>
         <button class="sub-btn" onclick="sendAction('key', '15')">Tab</button>
         <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+c')">复制</button>
-        <button class="sub-btn" onclick="sendAction('shortcut', 'ctrl+v')">粘贴</button>
+        <button class="sub-btn" onclick="sendAction('shortcut', 'shift+insert')">粘贴</button>
     </div>
 
     <button class="main-btn" onclick="sendText()">发送文本到电脑</button>
@@ -487,8 +487,8 @@ class Handler(BaseHTTPRequestHandler):
                 subprocess.run(["ydotool", "key", "-d", "20", "29:1", "44:1", "44:0", "29:0"], env=env)
             elif data_value == "ctrl+c":
                 subprocess.run(["ydotool", "key", "-d", "20", "29:1", "46:1", "46:0", "29:0"], env=env)
-            elif data_value == "ctrl+v":
-                subprocess.run(["ydotool", "key", "-d", "20", "29:1", "47:1", "47:0", "29:0"], env=env)
+            elif data_value == "shift+insert":
+                subprocess.run(["ydotool", "key", "-d", "20", "42:1", "110:1", "110:0", "42:0"], env=env)
 
         self.send_response(200)
         self.end_headers()
