@@ -70,7 +70,7 @@ INPUT_HTML = """
 
     <div class="mouse-container">
         <button class="click-btn" id="leftClickBtn">左键</button>
-        <div class="touchpad" id="pad">滑动控制鼠标指针</div>
+        <div class="touchpad" id="pad">滑动移鼠标 · 轻触单击<br>双击进入/退出拖拽</div>
         <button class="click-btn right-btn" id="rightClickBtn">右键</button>
     </div>
 
@@ -108,17 +108,28 @@ INPUT_HTML = """
             postData({ type: type, value: value });
         }
 
-        // 2. 触摸板核心逻辑：轻触=左键，长按拖动=按住拖拽
+        // 2. 触摸板：轻触=左键，连续双击进入拖拽模式，再双击退出
         const pad = document.getElementById('pad');
         let lastX = 0, lastY = 0;
         let totalDx = 0, totalDy = 0;
-        let touchStartTime = 0;
-        let isHolding = false;       // 长按已触发，按键已按下
-        let holdSent = false;        // 已发送 mouse_down
         let moveQueue = { dx: 0, dy: 0 };
         let timer = null;
-        const HOLD_DELAY = 300;     // 长按阈值 300ms
-        const TAP_THRESHOLD = 10;   // 轻触移动容忍像素
+        const TAP_THRESHOLD = 10;   // 轻触位移容忍像素
+        const DOUBLE_TAP_MS = 300;  // 双击间隔窗口
+
+        // 状态：idle | pending_tap | dragging
+        let padState = 'idle';
+        let tapTimeout = null;
+
+        function padSendMove() {
+            let sendX = Math.round(moveQueue.dx);
+            let sendY = Math.round(moveQueue.dy);
+            if (sendX !== 0 || sendY !== 0) {
+                postData({ type: 'mouse_move', x: sendX, y: sendY }, true);
+            }
+            moveQueue = { dx: 0, dy: 0 };
+            timer = null;
+        }
 
         pad.addEventListener('touchstart', (e) => {
             const touch = e.touches[0];
@@ -126,9 +137,6 @@ INPUT_HTML = """
             lastY = touch.clientY;
             totalDx = 0;
             totalDy = 0;
-            touchStartTime = Date.now();
-            isHolding = false;
-            holdSent = false;
             pad.style.background = '#2a2a2a';
         });
 
@@ -142,51 +150,64 @@ INPUT_HTML = """
             totalDx += Math.abs(dx);
             totalDy += Math.abs(dy);
 
-            // 如果移动距离超过阈值且还没进入长按状态，取消长按检测
-            if (!isHolding && (totalDx > TAP_THRESHOLD || totalDy > TAP_THRESHOLD)) {
-                // 移动距离已经够大，如果还没到长按时间，说明是快速滑动，不触发拖拽
-                // 但如果已经超过长按时间，进入拖拽
+            // 拖拽模式下，移动即拖动
+            if (padState === 'dragging') {
+                moveQueue.dx += dx * 1.5;
+                moveQueue.dy += dy * 1.5;
+                if (!timer) {
+                    timer = setTimeout(padSendMove, 40);
+                }
+                return;
             }
 
-            // 已经超过长按时间，发送 mouse_down 并开始拖拽
-            if (!holdSent && Date.now() - touchStartTime >= HOLD_DELAY) {
-                isHolding = true;
-                holdSent = true;
-                postData({ type: 'mouse_down', value: 'left' }, true);
-                pad.style.background = '#333';
-            }
-
-            // 灵敏度系数 1.5 倍
+            // 非拖拽模式，正常移动光标
             moveQueue.dx += dx * 1.5;
             moveQueue.dy += dy * 1.5;
-
-            // 节流：40ms 周期打包发送
             if (!timer) {
-                timer = setTimeout(() => {
-                    let sendX = Math.round(moveQueue.dx);
-                    let sendY = Math.round(moveQueue.dy);
-                    if (sendX !== 0 || sendY !== 0) {
-                        postData({ type: 'mouse_move', x: sendX, y: sendY }, true);
-                    }
-                    moveQueue = { dx: 0, dy: 0 };
-                    timer = null;
-                }, 40);
+                timer = setTimeout(padSendMove, 40);
             }
         });
 
-        pad.addEventListener('touchend', (e) => {
-            let elapsed = Date.now() - touchStartTime;
+        pad.addEventListener('touchend', () => {
+            let isTap = totalDx < TAP_THRESHOLD && totalDy < TAP_THRESHOLD;
 
-            if (holdSent) {
-                // 拖拽结束，释放按键
-                postData({ type: 'mouse_up', value: 'left' }, true);
-            } else if (elapsed < HOLD_DELAY && totalDx < TAP_THRESHOLD && totalDy < TAP_THRESHOLD) {
-                // 轻触 = 左键单击
-                postData({ type: 'mouse_click', value: 'left' }, true);
+            if (padState === 'dragging') {
+                // 拖拽中松手 → 如果是轻触，退出拖拽模式
+                if (isTap) {
+                    postData({ type: 'mouse_up', value: 'left' }, true);
+                    padState = 'idle';
+                    pad.style.background = '#222';
+                }
+                // 如果是滑动后松手，保持拖拽状态（手指再放上来继续拖）
+                return;
             }
 
-            isHolding = false;
-            holdSent = false;
+            if (isTap) {
+                if (padState === 'pending_tap') {
+                    // 第二次轻触 → 进入拖拽模式
+                    clearTimeout(tapTimeout);
+                    padState = 'dragging';
+                    postData({ type: 'mouse_down', value: 'left' }, true);
+                    pad.style.background = '#333';
+                } else {
+                    // 第一次轻触 → 等待双击
+                    padState = 'pending_tap';
+                    tapTimeout = setTimeout(() => {
+                        // 超时未双击 → 单击
+                        if (padState === 'pending_tap') {
+                            postData({ type: 'mouse_click', value: 'left' }, true);
+                            padState = 'idle';
+                        }
+                    }, DOUBLE_TAP_MS);
+                }
+            } else {
+                // 滑动后松手，取消双击等待
+                if (padState === 'pending_tap') {
+                    clearTimeout(tapTimeout);
+                    padState = 'idle';
+                }
+            }
+
             pad.style.background = '#222';
         });
 
