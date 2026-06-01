@@ -247,18 +247,18 @@ INPUT_HTML = """
 
     <div class="touchpad-only" id="touchpadOnly">
         <div class="numpad">
-            <button class="kb-key" data-code="71">7</button>
-            <button class="kb-key" data-code="72">8</button>
-            <button class="kb-key" data-code="73">9</button>
-            <button class="kb-key" data-code="75">4</button>
-            <button class="kb-key" data-code="76">5</button>
-            <button class="kb-key" data-code="77">6</button>
-            <button class="kb-key" data-code="79">1</button>
-            <button class="kb-key" data-code="80">2</button>
-            <button class="kb-key" data-code="81">3</button>
-            <button class="kb-key" data-code="82">0</button>
-            <button class="kb-key" data-code="83">.</button>
-            <button class="kb-key" data-code="96">Enter</button>
+            <button class="kb-key" data-code="8">7</button>
+            <button class="kb-key" data-code="9">8</button>
+            <button class="kb-key" data-code="10">9</button>
+            <button class="kb-key" data-code="5">4</button>
+            <button class="kb-key" data-code="6">5</button>
+            <button class="kb-key" data-code="7">6</button>
+            <button class="kb-key" data-code="2">1</button>
+            <button class="kb-key" data-code="3">2</button>
+            <button class="kb-key" data-code="4">3</button>
+            <button class="kb-key" data-code="11">0</button>
+            <button class="kb-key" data-code="52">.</button>
+            <button class="kb-key" data-code="28">Enter</button>
         </div>
         <div class="touchpad-col">
             <div class="touchpad" id="pad2"></div>
