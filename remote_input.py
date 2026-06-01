@@ -502,8 +502,59 @@ INPUT_HTML = """
         kbContainer.addEventListener('touchmove', handleKeyTouchMove, { passive: false });
         kbContainer.addEventListener('touchend', handleKeyTouchEnd, { passive: false });
         kbContainer.addEventListener('touchcancel', handleKeyTouchCancel);
+
+        // 主键盘鼠标事件（桌面端）
+        kbContainer.addEventListener('mousedown', (e) => {
+            const key = e.target.closest('.kb-key');
+            if (!key) return;
+            e.preventDefault();
+            const code = parseInt(key.getAttribute('data-code'));
+            if (!code) return;
+            if (key.id === 'shiftKey' || key.dataset.code === '58' || key.dataset.code === '29') {
+                // Shift/Caps/Ctrl 点击切换状态
+                if (key.id === 'shiftKey') {
+                    shiftActive = !shiftActive;
+                    shiftKeyEl.classList.toggle('shift-active', shiftActive);
+                    updateShiftDisplay();
+                } else if (key.dataset.code === '58') {
+                    capsLockActive = !capsLockActive;
+                    capsLockKey.classList.toggle('shift-active', capsLockActive);
+                } else if (key.dataset.code === '29') {
+                    ctrlActive = !ctrlActive;
+                    ctrlKeyEl.classList.toggle('alt-active', ctrlActive);
+                }
+                return;
+            }
+            key.style.background = '#555';
+            if (ctrlActive && shiftActive) {
+                postData({ type: 'key_combo', value: '29,42,' + code });
+                ctrlActive = false;
+                ctrlKeyEl.classList.remove('alt-active');
+                shiftActive = false;
+                shiftKeyEl.classList.remove('shift-active');
+                updateShiftDisplay();
+            } else if (ctrlActive) {
+                postData({ type: 'key_combo', value: '29,' + code });
+                ctrlActive = false;
+                ctrlKeyEl.classList.remove('alt-active');
+            } else if (shiftActive || (capsLockActive && letterCodes.has(code))) {
+                postData({ type: 'key_combo', value: '42,' + code });
+                if (shiftActive) {
+                    shiftActive = false;
+                    shiftKeyEl.classList.remove('shift-active');
+                    updateShiftDisplay();
+                }
+            } else {
+                postData({ type: 'key', value: code });
+            }
+        });
+        kbContainer.addEventListener('mouseup', (e) => {
+            const key = e.target.closest('.kb-key');
+            if (key) key.style.background = '';
+        });
         // numpad 按键直接绑定事件（不通过 touchpadOnly 委托，避免干扰触摸板）
         document.querySelectorAll('#touchpadOnly .numpad .kb-key').forEach(key => {
+            // 触摸事件
             key.addEventListener('touchstart', (e) => {
                 e.stopPropagation();
                 handleKeyTouchStart(e);
@@ -515,6 +566,38 @@ INPUT_HTML = """
             key.addEventListener('touchcancel', (e) => {
                 e.stopPropagation();
                 handleKeyTouchCancel(e);
+            });
+            // 鼠标事件（桌面端）
+            key.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const code = parseInt(key.getAttribute('data-code'));
+                if (!code) return;
+                key.style.background = '#555';
+                // 直接发送按键，不依赖触摸板手势
+                if (ctrlActive && shiftActive) {
+                    postData({ type: 'key_combo', value: '29,42,' + code });
+                    ctrlActive = false;
+                    ctrlKeyEl.classList.remove('alt-active');
+                    shiftActive = false;
+                    shiftKeyEl.classList.remove('shift-active');
+                    updateShiftDisplay();
+                } else if (ctrlActive) {
+                    postData({ type: 'key_combo', value: '29,' + code });
+                    ctrlActive = false;
+                    ctrlKeyEl.classList.remove('alt-active');
+                } else if (shiftActive) {
+                    postData({ type: 'key_combo', value: '42,' + code });
+                    shiftActive = false;
+                    shiftKeyEl.classList.remove('shift-active');
+                    updateShiftDisplay();
+                } else {
+                    postData({ type: 'key', value: code });
+                }
+            });
+            key.addEventListener('mouseup', (e) => {
+                e.stopPropagation();
+                key.style.background = '';
             });
         });
 
