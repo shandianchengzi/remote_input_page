@@ -1058,10 +1058,6 @@ class Handler(BaseHTTPRequestHandler):
 
         # 处理文件上传
         if self.path == '/upload':
-            import cgi
-            import tempfile
-            import os
-
             content_type = self.headers.get('Content-Type', '')
             if 'multipart/form-data' not in content_type:
                 self.send_response(400)
@@ -1070,43 +1066,70 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": "无效的请求格式"}).encode())
                 return
 
-            # 解析 multipart 数据
-            form = cgi.FieldStorage(
-                fp=self.rfile,
-                headers=self.headers,
-                environ={
-                    'REQUEST_METHOD': 'POST',
-                    'CONTENT_TYPE': content_type,
-                }
-            )
+            # 手动解析 multipart 数据（兼容 Python 3.13+，cgi 模块已移除）
+            boundary = content_type.split('boundary=')[1].strip()
+            if boundary.startswith('"') and boundary.endswith('"'):
+                boundary = boundary[1:-1]
+            boundary_bytes = boundary.encode()
 
-            target_dir = form.getfirst('target_dir', '~/Downloads')
+            length = int(self.headers['Content-Length'])
+            body = self.rfile.read(length)
+
+            # 按 boundary 分割
+            parts = body.split(b'--' + boundary_bytes)
+            target_dir = '~/Downloads'
+            uploaded_files = []
+
+            for part in parts:
+                if not part or part.strip() == b'' or part.strip() == b'--':
+                    continue
+                # 去掉尾部的 \r\n
+                if part.endswith(b'\r\n'):
+                    part = part[:-2]
+
+                # 分离 headers 和 body
+                header_end = part.find(b'\r\n\r\n')
+                if header_end == -1:
+                    continue
+                headers_raw = part[:header_end].decode('utf-8', errors='replace')
+                file_body = part[header_end + 4:]
+
+                # 提取 name 和 filename
+                name = None
+                filename = None
+                for line in headers_raw.split('\r\n'):
+                    if 'Content-Disposition:' in line:
+                        for token in line.split(';'):
+                            token = token.strip()
+                            if token.startswith('name='):
+                                name = token.split('=', 1)[1].strip('"')
+                            if token.startswith('filename='):
+                                filename = token.split('=', 1)[1].strip('"')
+
+                if name == 'target_dir' and file_body:
+                    target_dir = file_body.decode('utf-8', errors='replace').strip() or '~/Downloads'
+                elif name == 'files' and filename:
+                    safe_name = os.path.basename(filename)
+                    if safe_name:
+                        uploaded_files.append((safe_name, file_body))
+
             # 展开 ~ 路径
             target_dir = os.path.expanduser(target_dir)
-
-            # 确保目标目录存在
             os.makedirs(target_dir, exist_ok=True)
 
-            uploaded_files = []
-            items = form['files'] if 'files' in form else []
-            if not isinstance(items, list):
-                items = [items]
+            saved_names = []
+            for name, data in uploaded_files:
+                filepath = os.path.join(target_dir, name)
+                with open(filepath, 'wb') as f:
+                    f.write(data)
+                saved_names.append(name)
 
-            for item in items:
-                if item.filename:
-                    # 安全处理文件名
-                    filename = os.path.basename(item.filename)
-                    filepath = os.path.join(target_dir, filename)
-                    with open(filepath, 'wb') as f:
-                        f.write(item.file.read())
-                    uploaded_files.append(filename)
-
-            if uploaded_files:
-                msg = f"成功上传 {len(uploaded_files)} 个文件到 {target_dir}"
+            if saved_names:
+                msg = f"成功上传 {len(saved_names)} 个文件到 {target_dir}"
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
-                self.wfile.write(json.dumps({"message": msg, "files": uploaded_files}).encode())
+                self.wfile.write(json.dumps({"message": msg, "files": saved_names}).encode())
             else:
                 self.send_response(400)
                 self.send_header('Content-Type', 'application/json')
