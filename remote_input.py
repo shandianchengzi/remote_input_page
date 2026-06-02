@@ -63,6 +63,24 @@ INPUT_HTML = """
         .help-text { margin-top: 10px; color: #555; font-size: 11px; line-height: 1.6; }
         .help-text b { color: #777; }
 
+        /* 文件上传区域 */
+        .file-upload-section { margin-top: 15px; }
+        .upload-row { display: flex; gap: 8px; align-items: center; }
+        .dir-input {
+            flex: 1; height: 38px; font-size: 13px; padding: 0 10px;
+            background: #1e1e1e; color: white; border: 1px solid #333;
+            border-radius: 6px; outline: none;
+        }
+        .dir-input:focus { border-color: #2563eb; }
+        .dir-input::placeholder { color: #666; }
+        .upload-btn {
+            height: 38px; padding: 0 16px; font-size: 13px;
+            background: #2563eb; color: white; border: none;
+            border-radius: 6px; cursor: pointer; white-space: nowrap;
+        }
+        .upload-btn:active { background: #1d4ed8; }
+        .upload-status { margin-top: 6px; color: #4ade80; font-size: 12px; min-height: 16px; }
+
         /* 统一宽度限制与居中容器 */
         .main-container { width: 100%; margin: 0; }
 
@@ -278,6 +296,15 @@ INPUT_HTML = """
         <b>左键/右键</b>：点击对应按钮 | <b>PgUp/PgDn</b>：翻页<br>
         <b>终端模式</b>：复制/粘贴→Ctrl+Shift+C/V，PgUp/PgDn→Ctrl+Shift+PageUp/Down<br>
         <b>快捷键</b>：退格=退格键，Esc=退出，Tab=制表，↑↓←→=方向键
+    </div>
+
+    <div class="file-upload-section">
+        <div class="upload-row">
+            <input type="text" id="targetDir" placeholder="目标目录（默认: ~/Downloads）" class="dir-input">
+            <button class="upload-btn" onclick="document.getElementById('fileInput').click()">上传文件</button>
+            <input type="file" id="fileInput" multiple style="display:none" onchange="uploadFiles(this.files)">
+        </div>
+        <div id="uploadStatus" class="upload-status"></div>
     </div>
 
     <script>
@@ -804,6 +831,44 @@ INPUT_HTML = """
         setupTouchpad(document.getElementById('pad'));
         setupTouchpad(document.getElementById('pad2'));
 
+        // 文件上传功能
+        async function uploadFiles(files) {
+            const status = document.getElementById('uploadStatus');
+            const targetDir = document.getElementById('targetDir').value.trim() || '~/Downloads';
+
+            if (!files || files.length === 0) return;
+
+            status.textContent = '上传中...';
+            status.style.color = '#fbbf24';
+
+            const formData = new FormData();
+            formData.append('target_dir', targetDir);
+            for (let i = 0; i < files.length; i++) {
+                formData.append('files', files[i]);
+            }
+
+            try {
+                const r = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await r.json();
+                if (r.ok) {
+                    status.textContent = result.message || `成功上传 ${files.length} 个文件`;
+                    status.style.color = '#4ade80';
+                } else {
+                    status.textContent = result.error || '上传失败';
+                    status.style.color = '#f87171';
+                }
+            } catch (e) {
+                status.textContent = '网络错误';
+                status.style.color = '#f87171';
+            }
+
+            // 清空文件输入
+            document.getElementById('fileInput').value = '';
+        }
+
         // 3. Enter 键（鼠标区域右侧）
         const enterBtn = document.getElementById('enterBtn');
         enterBtn.addEventListener('touchstart', (e) => {
@@ -989,6 +1054,64 @@ class Handler(BaseHTTPRequestHandler):
         if config["auth"] and not check_auth(self):
             self.send_response(403)
             self.end_headers()
+            return
+
+        # 处理文件上传
+        if self.path == '/upload':
+            import cgi
+            import tempfile
+            import os
+
+            content_type = self.headers.get('Content-Type', '')
+            if 'multipart/form-data' not in content_type:
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "无效的请求格式"}).encode())
+                return
+
+            # 解析 multipart 数据
+            form = cgi.FieldStorage(
+                fp=self.rfile,
+                headers=self.headers,
+                environ={
+                    'REQUEST_METHOD': 'POST',
+                    'CONTENT_TYPE': content_type,
+                }
+            )
+
+            target_dir = form.getfirst('target_dir', '~/Downloads')
+            # 展开 ~ 路径
+            target_dir = os.path.expanduser(target_dir)
+
+            # 确保目标目录存在
+            os.makedirs(target_dir, exist_ok=True)
+
+            uploaded_files = []
+            items = form['files'] if 'files' in form else []
+            if not isinstance(items, list):
+                items = [items]
+
+            for item in items:
+                if item.filename:
+                    # 安全处理文件名
+                    filename = os.path.basename(item.filename)
+                    filepath = os.path.join(target_dir, filename)
+                    with open(filepath, 'wb') as f:
+                        f.write(item.file.read())
+                    uploaded_files.append(filename)
+
+            if uploaded_files:
+                msg = f"成功上传 {len(uploaded_files)} 个文件到 {target_dir}"
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"message": msg, "files": uploaded_files}).encode())
+            else:
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "没有选择文件"}).encode())
             return
 
         length = int(self.headers["Content-Length"])
