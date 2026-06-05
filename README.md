@@ -1,21 +1,25 @@
 # Remote Input
 
-Ubuntu Wayland 环境下的手机远程输入工具。
+手机远程输入工具，支持 Ubuntu Wayland 和 Windows。
 
-手机浏览器打开网页，使用手机输入法（语音/拼音/手写）输入文字，点发送后自动粘贴到电脑当前光标位置。同时提供虚拟触摸板、鼠标按键、方向键、快捷键等完整远程控制能力。专为 Ubuntu 22+ Wayland 环境设计，不受 GNOME 沙箱限制。
+手机浏览器打开网页，使用手机输入法（语音/拼音/手写）输入文字，点发送后自动粘贴到电脑当前光标位置。同时提供虚拟触摸板、鼠标按键、方向键、快捷键等完整远程控制能力。
 
 ## 仓库内容
 
 ```
 remote_input_page/
-├── remote_input.py           # 主程序（Python 标准库，零第三方依赖）
-├── remote_input_launcher.sh  # 启动脚本（支持前台/无头模式）
-├── .env.example              # 配置模板（复制为 .env 并填入 token）
+├── remote_input.py           # 主程序
+├── remote_input_launcher.sh  # Linux 启动脚本
+├── start_service.bat         # Windows 启动脚本（带控制台）
+├── start_silent.vbs          # Windows 静默启动（无窗口）
+├── install_autostart.ps1     # Windows 开机自启安装脚本
+├── requirements.txt          # Python 依赖
 └── README.md
 ```
 
 ## 环境要求
 
+### Linux (Ubuntu Wayland)
 - Ubuntu 22.04+（Wayland，GNOME 桌面），测试环境：Ubuntu 26.04
 - Python 3（系统自带），测试版本：3.14
 - 手机和电脑在同一局域网
@@ -23,6 +27,15 @@ remote_input_page/
 已测试的依赖版本：
 - `ydotool` 1.0.4
 - `wl-clipboard` 2.2.1
+
+### Windows
+- Windows 10/11
+- Python 3.8+
+- 手机和电脑在同一局域网
+
+Windows 额外依赖（自动安装）：
+- `pyautogui` - 鼠标键盘模拟
+- `pyperclip` - 剪贴板操作
 
 ## 安装
 
@@ -45,6 +58,26 @@ sudo usermod -aG input $USER
 ```bash
 systemctl --user enable --now ydotool
 ```
+
+### Windows 安装
+
+```powershell
+# 安装 Python 依赖
+pip install -r requirements.txt
+
+# 启动服务（带认证）
+python remote_input.py --auth --token your_password
+```
+
+#### 开机自启
+
+以管理员身份运行 PowerShell：
+
+```powershell
+.\install_autostart.ps1
+```
+
+这会注册一个 Task Scheduler 任务，用户登录时自动启动服务。
 
 ## 使用
 
@@ -69,6 +102,19 @@ python3 remote_input.py --auth --token your_password
 | `--auth` | 启用登录认证 |
 | `--token XXX` | 指定自定义 token（需配合 `--auth`） |
 | `--port PORT` | 指定监听端口（默认 8080） |
+
+### Windows 启动
+
+```powershell
+# 带控制台启动（可看到日志）
+.\start_service.bat
+
+# 静默启动（无窗口，适合开机自启）
+.\start_silent.vbs
+
+# 或直接命令行
+python remote_input.py --auth --token your_password
+```
 
 ### 开机自启
 

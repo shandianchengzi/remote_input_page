@@ -13,9 +13,73 @@ Remote Input - Ubuntu Wayland 手机远程输入工具 (全功能版：含虚拟
 """
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
-import subprocess, time, os, sys, secrets, hashlib, json
+import subprocess, time, os, sys, secrets, hashlib, json, platform
+
+IS_WINDOWS = platform.system() == "Windows"
+
+if IS_WINDOWS:
+    import pyautogui
+    import pyperclip
+    pyautogui.FAILSAFE = False
+    pyautogui.PAUSE = 0
 
 config = {"auth": False, "token_raw": None, "sessions": {}, "nonces": {}}
+
+# Windows keycode 映射（Linux evdev code -> pyautogui key name）
+WIN_KEY_MAP = {
+    1: 'escape', 2: '1', 3: '2', 4: '3', 5: '4', 6: '5', 7: '6',
+    8: '7', 9: '8', 10: '9', 11: '0', 12: '-', 13: '=',
+    14: 'backspace', 15: 'tab', 16: 'q', 17: 'w', 18: 'e', 19: 'r',
+    20: 't', 21: 'y', 22: 'u', 23: 'i', 24: 'o', 25: 'p',
+    26: '[', 27: ']', 28: 'enter', 29: 'ctrlleft',
+    30: 'a', 31: 's', 32: 'd', 33: 'f', 34: 'g', 35: 'h',
+    36: 'j', 37: 'k', 38: 'l', 39: ';', 40: "'", 41: '`',
+    42: 'shiftleft', 43: '\\', 44: 'z', 45: 'x', 46: 'c', 47: 'v',
+    48: 'b', 49: 'n', 50: 'm', 51: ',', 52: '.', 53: '/',
+    56: 'altleft', 57: 'space', 58: 'capslock',
+    59: 'f1', 60: 'f2', 61: 'f3', 62: 'f4', 63: 'f5', 64: 'f6',
+    65: 'f7', 66: 'f8', 67: 'f9', 68: 'f10', 87: 'f11', 88: 'f12',
+    102: 'home', 103: 'up', 104: 'pageup', 105: 'left',
+    106: 'right', 107: 'end', 108: 'down', 109: 'pagedown',
+    110: 'insert', 111: 'delete',
+    125: 'win', 210: 'printscreen', 464: 'f15',
+}
+
+def win_send_keys(codes_str):
+    """发送按键组合，codes_str 格式: '42:1,46:1,46:0,42:0'"""
+    parts = codes_str.split(',')
+    down_keys = []
+    up_keys = []
+    for p in parts:
+        code_str, state = p.split(':')
+        code = int(code_str)
+        key = WIN_KEY_MAP.get(code)
+        if not key:
+            continue
+        if state == '1':
+            down_keys.append(key)
+        else:
+            up_keys.append(key)
+    for k in down_keys:
+        pyautogui.keyDown(k)
+    for k in reversed(up_keys):
+        pyautogui.keyUp(k)
+
+def win_mouse_move(mx, my):
+    pyautogui.moveRel(mx, my, duration=0)
+
+def win_mouse_click(button='left'):
+    pyautogui.click(button=button)
+
+def win_mouse_down(button='left'):
+    pyautogui.mouseDown(button=button)
+
+def win_mouse_up(button='left'):
+    pyautogui.mouseUp(button=button)
+
+def win_paste_text(text):
+    pyperclip.copy(text)
+    pyautogui.hotkey('ctrl', 'v')
 
 INPUT_HTML = """
 <!DOCTYPE html>
@@ -1149,6 +1213,50 @@ class Handler(BaseHTTPRequestHandler):
             data_type = "text"
             data_value = body
 
+        if IS_WINDOWS:
+            self._handle_input_windows(data, data_type, data_value, term_mode)
+        else:
+            self._handle_input_linux(data, data_type, data_value, term_mode)
+
+        self.send_response(200)
+        self.end_headers()
+
+    def _handle_input_windows(self, data, data_type, data_value, term_mode):
+        """Windows 输入后端 (pyautogui)"""
+        if data_type == "mouse_move":
+            win_mouse_move(data.get("x", 0), data.get("y", 0))
+        elif data_type == "mouse_click":
+            win_mouse_click(data.get("value", "left"))
+        elif data_type == "mouse_down":
+            win_mouse_down(data.get("value", "left"))
+        elif data_type == "mouse_up":
+            win_mouse_up(data.get("value", "left"))
+        elif data_type == "text" and data_value:
+            win_paste_text(data_value)
+        elif data_type == "key" and data_value:
+            code = int(data_value)
+            if term_mode and code == 104:
+                win_send_keys("29:1,42:1,104:1,104:0,42:0,29:0")
+            elif term_mode and code == 109:
+                win_send_keys("29:1,42:1,109:1,109:0,42:0,29:0")
+            else:
+                win_send_keys(f"{data_value}:1,{data_value}:0")
+        elif data_type == "key_combo" and data_value:
+            codes = [int(c.strip()) for c in data_value.split(',')]
+            combo = ",".join(f"{c}:1" for c in codes) + "," + ",".join(f"{c}:0" for c in reversed(codes))
+            win_send_keys(combo)
+        elif data_type == "shortcut" and data_value:
+            shortcut_map = {
+                "ctrl+a": "29:1,30:1,30:0,29:0",
+                "ctrl+z": "29:1,44:1,44:0,29:0",
+                "ctrl+c": "29:1,46:1,46:0,29:0" if not term_mode else "29:1,42:1,46:1,46:0,42:0,29:0",
+                "shift+insert": "42:1,110:1,110:0,42:0" if not term_mode else "29:1,42:1,47:1,47:0,42:0,29:0",
+            }
+            if data_value in shortcut_map:
+                win_send_keys(shortcut_map[data_value])
+
+    def _handle_input_linux(self, data, data_type, data_value, term_mode):
+        """Linux 输入后端 (ydotool)"""
         env = os.environ.copy()
         env["DISPLAY"] = ":0"
 
@@ -1162,12 +1270,10 @@ class Handler(BaseHTTPRequestHandler):
             subprocess.run(["ydotool", "click", key_code], env=env)
         elif data_type == "mouse_down":
             click_val = data.get("value", "left")
-            # 0x40=down base, 0x00=left, 0x01=right
             key_code = "0x41" if click_val == "right" else "0x40"
             subprocess.run(["ydotool", "click", key_code], env=env)
         elif data_type == "mouse_up":
             click_val = data.get("value", "left")
-            # 0x80=up base, 0x00=left, 0x01=right
             key_code = "0x81" if click_val == "right" else "0x80"
             subprocess.run(["ydotool", "click", key_code], env=env)
         elif data_type == "text" and data_value:
@@ -1177,15 +1283,12 @@ class Handler(BaseHTTPRequestHandler):
             subprocess.run(["ydotool", "key", "-d", "50", "42:1", "110:1", "110:0", "42:0"], env=env)
         elif data_type == "key" and data_value:
             if term_mode and data_value == "104":
-                # 终端模式: PgUp → Ctrl+Shift+PageUp (29+42+104)
                 subprocess.run(["ydotool", "key", "-d", "20", "29:1", "42:1", "104:1", "104:0", "42:0", "29:0"], env=env)
             elif term_mode and data_value == "109":
-                # 终端模式: PgDn → Ctrl+Shift+PageDown (29+42+109)
                 subprocess.run(["ydotool", "key", "-d", "20", "29:1", "42:1", "109:1", "109:0", "42:0", "29:0"], env=env)
             else:
                 subprocess.run(["ydotool", "key", f"{data_value}:1", f"{data_value}:0"], env=env)
         elif data_type == "key_combo" and data_value:
-            # 格式: "42,3" 表示按住 42(Shift)，按 3(2)，然后释放
             codes = [int(c.strip()) for c in data_value.split(',')]
             yd_args = [f"{c}:1" for c in codes] + [f"{c}:0" for c in reversed(codes)]
             subprocess.run(["ydotool", "key", "-d", "20"] + yd_args, env=env)
@@ -1196,13 +1299,11 @@ class Handler(BaseHTTPRequestHandler):
                 subprocess.run(["ydotool", "key", "-d", "20", "29:1", "44:1", "44:0", "29:0"], env=env)
             elif data_value == "ctrl+c":
                 if term_mode:
-                    # 终端模式: Ctrl+Shift+C (29+42+46)
                     subprocess.run(["ydotool", "key", "-d", "20", "29:1", "42:1", "46:1", "46:0", "42:0", "29:0"], env=env)
                 else:
                     subprocess.run(["ydotool", "key", "-d", "20", "29:1", "46:1", "46:0", "29:0"], env=env)
             elif data_value == "shift+insert":
                 if term_mode:
-                    # 终端模式: Ctrl+Shift+V (29+42+47)
                     subprocess.run(["ydotool", "key", "-d", "20", "29:1", "42:1", "47:1", "47:0", "42:0", "29:0"], env=env)
                 else:
                     subprocess.run(["ydotool", "key", "-d", "20", "42:1", "110:1", "110:0", "42:0"], env=env)
@@ -1235,5 +1336,8 @@ if __name__ == "__main__":
         print(f"认证已启用，Token: {token}")
 
     server = HTTPServer(("0.0.0.0", port), Handler)
-    print(f"服务已启动，端口: {port}")
+    platform_name = "Windows" if IS_WINDOWS else "Linux"
+    print(f"Remote Input 服务已启动 ({platform_name})")
+    print(f"端口: {port}")
+    print(f"访问地址: http://localhost:{port}")
     server.serve_forever()
